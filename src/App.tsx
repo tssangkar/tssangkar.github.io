@@ -21,6 +21,7 @@ import {
   Share2,
   RotateCcw,
   X,
+  Menu,
   PlusCircle,
   TrendingUp,
   Settings,
@@ -844,6 +845,7 @@ export default function App() {
 
   // ==================== CUSTOM STORE CONFIGURATION ====================
   const [activeTab, setActiveTab ] = useState<'pos' | 'products' | 'reports' | 'settings'>('pos');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
   const [storeNameState, setStoreNameState] = useState<string>('KASIR PINTAR');
   const [storeSloganState, setStoreSloganState] = useState<string>('Sistem Kasir Fleksibel Multi-Fungsi');
   const [storeAlamatState, setStoreAlamatState] = useState<string>('🌐 santridev.github.io | 📞 0812-3456-7890');
@@ -1237,7 +1239,7 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col bg-panel-bg text-slate-800 font-sans selection:bg-accent/25 selection:text-slate-900">
       {/* HEADER SECTION */}
-      <header className="bg-gradient-to-br from-primary to-secondary text-white shadow-md sticky top-0 z-40 transition-all duration-300">
+      <header className="relative bg-gradient-to-br from-primary to-secondary text-white shadow-md sticky top-0 z-40 transition-all duration-300">
         <div className="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             {storeLogoState && storeLogoState !== 'ts.png' && storeLogoState.startsWith('data:') ? (
@@ -1261,8 +1263,19 @@ export default function App() {
             </div>
           </div>
 
+          {/* Mobile menu button */}
+          <div className="flex md:hidden items-center">
+            <button
+              onClick={() => setIsMobileMenuOpen(prev => !prev)}
+              className="inline-flex items-center justify-center p-2 rounded-full bg-white/15 text-white hover:bg-white/25 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-white/70"
+              aria-label="Buka menu"
+            >
+              {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
+          </div>
+
           {/* Navigation Tabs */}
-          <div className="flex items-center gap-1 bg-white/10 p-1 rounded-full border border-white/5 backdrop-blur-xs text-[10px] md:text-xs">
+          <div className="hidden md:flex items-center gap-1 bg-white/10 p-1 rounded-full border border-white/5 backdrop-blur-xs text-[10px] md:text-xs">
             <button
               onClick={() => setActiveTab('pos')}
               className={`flex items-center gap-1 md:gap-1.5 px-2 md:px-3.5 py-1.5 rounded-full font-semibold transition-all duration-200 cursor-pointer ${
@@ -1321,6 +1334,40 @@ export default function App() {
               <Calendar className="w-3.5 h-3.5 text-accent-light" />
               <span>{currentDate || 'Tanggal'}</span>
             </div>
+          </div>
+        </div>
+
+        {/* Mobile dropdown menu */}
+        <div className={`md:hidden bg-white/95 backdrop-blur-xl border-t border-slate-200 shadow-sm transition-all duration-200 overflow-hidden ${isMobileMenuOpen ? 'max-h-[320px] opacity-100' : 'max-h-0 opacity-0'}`}>
+          <div className="px-4 py-3 space-y-2">
+            <button
+              onClick={() => { setActiveTab('pos'); setIsMobileMenuOpen(false); }}
+              className={`w-full text-left flex items-center gap-2 px-3 py-2 rounded-xl transition-colors duration-200 ${activeTab === 'pos' ? 'bg-accent text-white' : 'text-slate-700 hover:bg-slate-100'}`}
+            >
+              <ShoppingCart className="w-4 h-4" />
+              Kasir
+            </button>
+            <button
+              onClick={() => { setActiveTab('products'); setIsMobileMenuOpen(false); }}
+              className={`w-full text-left flex items-center gap-2 px-3 py-2 rounded-xl transition-colors duration-200 ${activeTab === 'products' ? 'bg-accent text-white' : 'text-slate-700 hover:bg-slate-100'}`}
+            >
+              <ShoppingBag className="w-4 h-4" />
+              Produk & Stok
+            </button>
+            <button
+              onClick={() => { setActiveTab('reports'); setIsMobileMenuOpen(false); fetchGoogleSheetReports(); }}
+              className={`w-full text-left flex items-center gap-2 px-3 py-2 rounded-xl transition-colors duration-200 ${activeTab === 'reports' ? 'bg-accent text-white' : 'text-slate-700 hover:bg-slate-100'}`}
+            >
+              <BarChart3 className="w-4 h-4" />
+              Laporan
+            </button>
+            <button
+              onClick={() => { setActiveTab('settings'); setIsMobileMenuOpen(false); }}
+              className={`w-full text-left flex items-center gap-2 px-3 py-2 rounded-xl transition-colors duration-200 ${activeTab === 'settings' ? 'bg-accent text-white' : 'text-slate-700 hover:bg-slate-100'}`}
+            >
+              <Settings className="w-4 h-4" />
+              Pengaturan
+            </button>
           </div>
         </div>
       </header>
