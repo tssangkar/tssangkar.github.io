@@ -1,0 +1,6 @@
+{
+  "name": "Kasir TS Sangkar",
+  "description": "Aplikasi Kasir profesional untuk TS Sangkar, terintegrasi dengan Google Sheets Web App, fitur pre-order, dan nota digital.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
