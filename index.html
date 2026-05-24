@@ -1,16 +1,22 @@
 <!doctype html>
-<html lang="en">
+<html lang="id">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#7c3aed" />
-    <link rel="manifest" href="manifest.webmanifest" />
-    <link rel="apple-touch-icon" href="/assets/logo-DrYHivZv.png" />
-    <title>Rizquna Kasir</title>
-    <meta name="description" content="Rizquna Kasir - aplikasi kasir PWA dengan fitur offline dan installable." />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <script type="module" crossorigin src="/assets/index-Bjyf8qsH.js"></script>
+    <title>Rizquna - Kasir Pintar</title>
+    <link rel="manifest" href="./manifest.json" />
+    <link rel="icon" type="image/png" href="./favicon.png" />
+    <meta name="theme-color" content="#253359" />
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('./sw.js')
+            .then(reg => console.log('ServiceWorker registered:', reg.scope))
+            .catch(err => console.error('ServiceWorker registration failed:', err));
+        });
+      }
+    </script>
+    <script type="module" crossorigin src="/assets/index-BD1k2rw6.js"></script>
     <link rel="stylesheet" crossorigin href="/assets/index-CsD9af7x.css">
   </head>
   <body>
