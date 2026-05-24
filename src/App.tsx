@@ -27,6 +27,12 @@ import {
   BarChart3,
   Menu,
   Camera,
+  Briefcase,
+  Award,
+  Package,
+  Banknote,
+  Truck,
+  Percent,
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -112,6 +118,24 @@ export default function App() {
   const [uangDiterima, setUangDiterima] = useState<number>(0);
   const [dpDiterima, setDpDiterima] = useState<number>(0);
 
+  // Theme states
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('ts_sangkar_theme');
+      return saved === 'dark';
+    } catch (e) {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('ts_sangkar_theme', isDarkMode ? 'dark' : 'light');
+    } catch (e) {
+      console.error(e);
+    }
+  }, [isDarkMode]);
+
   // Time & date states
   const [currentTime, setCurrentTime] = useState<string>('');
   const [currentDate, setCurrentDate] = useState<string>('');
@@ -169,6 +193,7 @@ export default function App() {
           kategori: item.kategori !== undefined && item.kategori !== null ? String(item.kategori) : '',
           foto: getGoogleDriveThumbnailUrl(item.foto_url || ''),
           stok: item.stok !== undefined && item.stok !== '' ? Number(item.stok) : 100,
+          hargaPokok: item.harga_pokok !== undefined && item.harga_pokok !== null ? Number(item.harga_pokok) : 0,
         }));
         setProducts(mapped);
         if (!quiet) triggerToast('Katalog produk disinkronkan dari Google Sheets!', 'success');
@@ -216,7 +241,8 @@ export default function App() {
             tipe: 'Mentah', 
             harga: newProd.harga,
             foto_url: newProd.foto,
-            stok: newProd.stok !== undefined ? newProd.stok : 100
+            stok: newProd.stok !== undefined ? newProd.stok : 100,
+            harga_pokok: newProd.hargaPokok || 0
           }
         })
       });
@@ -280,7 +306,8 @@ export default function App() {
             tipe: 'Mentah',
             harga: editedProd.harga,
             foto_url: editedProd.foto,
-            stok: editedProd.stok !== undefined ? editedProd.stok : 100
+            stok: editedProd.stok !== undefined ? editedProd.stok : 100,
+            harga_pokok: editedProd.hargaPokok || 0
           }
         })
       });
@@ -522,6 +549,7 @@ export default function App() {
         qty: c.qty,
         harga: c.harga,
         catatan: c.note || '',
+        hargaPokok: c.hargaPokok || 0,
       })),
       subtotal: getSubtotal(),
       diskonPct: diskon,
@@ -647,7 +675,7 @@ export default function App() {
                         <tr style="border-bottom:1px solid #eee;">
                           <td style="padding:6px 4px;">
                             \${item.nama} <span style="font-size:9;color:#777;">(\${item.ukuran})</span>
-                            \${item.catatan ? '<div style="font-size:9px;color:#888;">📝 ' + item.catatan + '</div>' : ''}
+                            \${item.catatan ? '<div style="font-size:9px;color:#888;">Catatan: ' + item.catatan + '</div>' : ''}
                           </td>
                           <td style="text-align:center;padding:6px 4px;">\${item.qty}</td>
                           <td style="text-align:right;padding:6px 4px;">Rp \${item.harga.toLocaleString('id-ID')}</td>
@@ -664,10 +692,10 @@ export default function App() {
                   <div style="display:flex;justify-content:space-between;"><span>Biaya Tambahan:</span><strong>Rp ${receiptData.tambahan.toLocaleString('id-ID')}</strong></div>
                   <div style="border-top:1px solid #111;margin:6px 0;"></div>
                   <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:800;"><span>TOTAL:</span><span>Rp ${receiptData.total.toLocaleString('id-ID')}</span></div>
-                  <div style="margin-top:6px;">💳 Metode: <strong>${receiptData.metode === 'DP' ? '🏷️ DP (Uang Muka)' : receiptData.metode}</strong></div>
+                  <div style="margin-top:6px;">Metode: <strong>${receiptData.metode === 'DP' ? 'DP (Uang Muka)' : receiptData.metode}</strong></div>
                   ${
                     receiptData.metode === 'Belum Dibayar'
-                      ? `<div style="margin-top:6px;padding:6px;background:#fff9eb;border:1px solid #fde68a;text-align:center;">⏳ Bayar saat barang diambil</div>`
+                      ? `<div style="margin-top:6px;padding:6px;background:#fff9eb;border:1px solid #fde68a;text-align:center;">Bayar saat barang diambil</div>`
                       : `
                     <div style="display:flex;justify-content:space-between;margin-top:3px;"><span>Uang Masuk:</span><strong>Rp ${receiptData.uangDiterima.toLocaleString('id-ID')}</strong></div>
                     <div style="display:flex;justify-content:space-between;font-weight:700;\${${receiptData.change} >=0 ? 'color:green' : 'color:red'}">
@@ -678,7 +706,7 @@ export default function App() {
                   }
                 </div>
                 <div style="text-align:center;margin-top:20px;padding-top:10px;border-top:2px dashed #ddd;font-size:9px;color:#777;">
-                  <p style="margin:2px 0;">🙏 Terima kasih atas kepercayaan Anda</p>
+                  <p style="margin:2px 0;">Terima kasih atas kepercayaan Anda</p>
                   <p style="margin:2px 0;font-weight:600;text-transform:uppercase;">· ${storeNameState} ·</p>
                   <p style="margin:2px 0;">${storeAlamatState}</p>
                   ${storeKontakState ? `<p style="margin:2px 0;font-weight:500;">${storeKontakState}</p>` : ''}
@@ -767,7 +795,7 @@ export default function App() {
                   <tr style="border-bottom:1px solid #f3f4f6;">
                     <td style="padding:6px;">
                       ${item.nama} <span style="font-size:9px;color:#6b7280;">(${item.ukuran})</span>
-                      ${item.catatan ? `<div style="font-size:9px;color:#888;">📝 ${item.catatan}</div>` : ''}
+                      ${item.catatan ? `<div style="font-size:9px;color:#888;">Catatan: ${item.catatan}</div>` : ''}
                     </td>
                     <td style="padding:6px;text-align:center;">${item.qty}</td>
                     <td style="padding:6px;text-align:right;font-weight:600;">Rp ${(item.qty * item.harga).toLocaleString('id-ID')}</td>
@@ -785,10 +813,10 @@ export default function App() {
             <div style="display:flex;justify-content:space-between;"><span>Biaya Tambahan:</span><span>Rp ${receiptData.tambahan.toLocaleString('id-ID')}</span></div>
             <div style="border-top:1.5px solid #111827;margin:6px 0;"></div>
             <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:800;color:#111827;"><span>TOTAL TAGIHAN:</span><span>Rp ${receiptData.total.toLocaleString('id-ID')}</span></div>
-            <div style="margin-top:6px;color:#4b5563;">💳 Metode: <strong>${receiptData.metode === 'DP' ? '🏷️ DP (Uang Muka)' : receiptData.metode}</strong></div>
+            <div style="margin-top:6px;color:#4b5563;">Metode: <strong>${receiptData.metode === 'DP' ? 'DP (Uang Muka)' : receiptData.metode}</strong></div>
             ${
               receiptData.metode === 'Belum Dibayar'
-                ? `<div style="margin-top:6px;padding:6px;background:#fffbeb;border:1px solid #fef3c7;border-radius:4px;color:#b45309;text-align:center;">⏳ Pembayaran saat pengambilan</div>`
+                ? `<div style="margin-top:6px;padding:6px;background:#fffbeb;border:1px solid #fef3c7;border-radius:4px;color:#b45309;text-align:center;">Pembayaran saat pengambilan</div>`
                 : `
               <div style="display:flex;justify-content:space-between;margin-top:4px;"><span>Uang Diterima:</span><span>Rp ${receiptData.uangDiterima.toLocaleString('id-ID')}</span></div>
               <div style="display:flex;justify-content:space-between;font-weight:700;margin-top:2px;">
@@ -799,7 +827,7 @@ export default function App() {
             }
           </div>
           <div style="text-align:center;margin-top:20px;padding-top:12px;border-top:1.5px dashed #d1d5db;font-size:9px;color:#6b7280;">
-            <p style="margin:2px 0;">🙏 Terima kasih atas kepercayaan Anda</p>
+            <p style="margin:2px 0;">Terima kasih atas kepercayaan Anda</p>
             <p style="margin:2px 0;font-weight:600;color:#374151;text-transform:uppercase;">· ${storeNameState} ·</p>
             <p style="margin:2px 0;">${storeAlamatState}</p>
             ${storeKontakState ? `<p style="margin:2px 0;font-weight:550;">${storeKontakState}</p>` : ''}
@@ -985,6 +1013,7 @@ export default function App() {
   const [prodFormUkuran, setProdFormUkuran] = useState<string>('');
   const [prodFormKategori, setProdFormKategori] = useState<string>('Umum');
   const [prodFormHarga, setProdFormHarga] = useState<number>(0);
+  const [prodFormHargaPokok, setProdFormHargaPokok] = useState<number>(0);
   const [prodFormFoto, setProdFormFoto] = useState<string>('');
   const [prodFormStok, setProdFormStok ] = useState<number>(100);
   const [prodFormId, setProdFormId] = useState<string>('');
@@ -1433,10 +1462,12 @@ export default function App() {
   // Calculation of sheet reports statistics
   const getReportsStats = () => {
     let totalSales = 0;
+    let totalModal = 0;
     const transactionCount = sheetRows.length;
     const paymentMethodsMap: Record<string, number> = {};
     const dateSalesMap: Record<string, number> = {};
-    const productSalesMap: Record<string, { name: string; count: number; revenue: number }> = {};
+    const dateModalMap: Record<string, number> = {};
+    const productSalesMap: Record<string, { name: string; count: number; revenue: number; modal: number; profit: number }> = {};
 
     sheetRows.forEach((row) => {
       const totalStr = getTotalVal(row);
@@ -1449,8 +1480,9 @@ export default function App() {
       const dateStr = getTanggal(row) || 'Unknown';
       dateSalesMap[dateStr] = (dateSalesMap[dateStr] || 0) + totalNum;
 
-      // Hubungkan data item / produk dari list JSON untuk menghitung yang terlaris
+      // Hubungkan data item / produk dari list JSON untuk menghitung yang terlaris dan modalnya
       const itemsRaw = getItems(row);
+      let rowModal = 0;
       if (itemsRaw) {
         try {
           const trimmed = itemsRaw.trim();
@@ -1462,11 +1494,24 @@ export default function App() {
                 if (pName) {
                   const q = Number(it.qty) || 1;
                   const h = Number(it.harga || it.price) || 0;
+                  
+                  // Look up cost price: from item JSON first, otherwise from current active catalog
+                  let singleCost = Number(it.hargaPokok) || 0;
+                  if (!singleCost) {
+                    const matchedP = products.find(prod => String(prod.nama).toLowerCase() === pName.toLowerCase());
+                    singleCost = matchedP && matchedP.hargaPokok ? matchedP.hargaPokok : 0;
+                  }
+                  
+                  const itemModal = singleCost * q;
+                  rowModal += itemModal;
+
                   if (!productSalesMap[pName]) {
-                    productSalesMap[pName] = { name: pName, count: 0, revenue: 0 };
+                    productSalesMap[pName] = { name: pName, count: 0, revenue: 0, modal: 0, profit: 0 };
                   }
                   productSalesMap[pName].count += q;
                   productSalesMap[pName].revenue += (h * q);
+                  productSalesMap[pName].modal += itemModal;
+                  productSalesMap[pName].profit += ((h - singleCost) * q);
                 }
               });
             }
@@ -1475,8 +1520,11 @@ export default function App() {
           // Gagal uraikan JSON, abaikan
         }
       }
+      totalModal += rowModal;
+      dateModalMap[dateStr] = (dateModalMap[dateStr] || 0) + rowModal;
     });
 
+    const totalProfit = totalSales - totalModal;
     const averageOrder = transactionCount > 0 ? Math.round(totalSales / transactionCount) : 0;
 
     const paymentStats = Object.keys(paymentMethodsMap).map((method) => ({
@@ -1488,17 +1536,27 @@ export default function App() {
       name,
       count: productSalesMap[name].count,
       revenue: productSalesMap[name].revenue,
+      modal: productSalesMap[name].modal,
+      profit: productSalesMap[name].profit,
     })).sort((a, b) => b.count - a.count).slice(0, 10);
 
-    const dailyTrends = Object.keys(dateSalesMap).map((date) => ({
-      date,
-      sales: dateSalesMap[date],
-    })).sort((a, b) => {
+    const dailyTrends = Object.keys(dateSalesMap).map((date) => {
+      const sales = dateSalesMap[date];
+      const modal = dateModalMap[date] || 0;
+      return {
+        date,
+        sales,
+        modal,
+        profit: sales - modal,
+      };
+    }).sort((a, b) => {
       return parseDateToComparable(b.date) - parseDateToComparable(a.date);
     }).slice(0, 10);
 
     return {
       totalSales,
+      totalModal,
+      totalProfit,
       transactionCount,
       averageOrder,
       paymentStats,
@@ -1519,7 +1577,7 @@ export default function App() {
   });
 
   return (
-    <div className="min-h-screen flex flex-col bg-panel-bg text-slate-800 font-sans selection:bg-accent/25 selection:text-slate-900">
+    <div className={`min-h-screen flex flex-col bg-panel-bg text-slate-800 font-sans selection:bg-accent/25 selection:text-slate-900 ${isDarkMode ? 'dark' : ''}`}>
       {/* HEADER SECTION */}
       <header className="bg-gradient-to-br from-primary to-secondary text-white shadow-md sticky top-0 z-40 transition-all duration-300">
         <div className="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between gap-4">
@@ -1922,7 +1980,7 @@ export default function App() {
                   {/* USER NOTE INSERTION */}
                   <input
                     type="text"
-                    placeholder="📝 Catatan item (opsional)"
+                    placeholder="Tambah catatan untuk item ini... (opsional)"
                     value={item.note}
                     onChange={(e) => {
                       const updated = [...cart];
@@ -1948,7 +2006,7 @@ export default function App() {
           <div className="space-y-3.5">
             <div>
               <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1 select-none">
-                <User className="w-3 h-3 text-slate-400" /> Nama Pelanggan
+                <User className="w-3 h-3 text-slate-400" /> Nama Pelanggan <span className="text-rose-500 font-bold ml-0.5 animate-pulse">*</span>
               </label>
               <input
                 type="text"
@@ -2002,8 +2060,8 @@ export default function App() {
             {/* ADDTIONAL BILLING */}
             <div className="grid grid-cols-3 gap-2 pt-1">
               <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block select-none">
-                  📦 Ongkir
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1 select-none">
+                  <Truck className="w-3 h-3 text-slate-400" /> Ongkir
                 </label>
                 <input
                   type="number"
@@ -2014,8 +2072,8 @@ export default function App() {
                 />
               </div>
               <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block select-none">
-                  ➕ Tambahan
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1 select-none">
+                  <Plus className="w-3 h-3 text-slate-400" /> Tambahan
                 </label>
                 <input
                   type="number"
@@ -2026,8 +2084,8 @@ export default function App() {
                 />
               </div>
               <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block select-none">
-                  🏷️ Diskon (%)
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1 select-none">
+                  <Percent className="w-3 h-3 text-slate-400" /> Diskon (%)
                 </label>
                 <input
                   type="number"
@@ -2057,8 +2115,8 @@ export default function App() {
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3 items-center">
               <div>
-                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 block select-none">
-                  💳 Metode Bayar
+                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1 select-none">
+                  <CreditCard className="w-3 h-3 text-slate-400" /> Metode Bayar
                 </label>
                 <select
                   value={metode}
@@ -2069,20 +2127,20 @@ export default function App() {
                   }}
                   className="text-xs w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-accent focus:bg-white transition-all text-slate-700 font-sans"
                 >
-                  <option value="Tunai">💵 Tunai</option>
-                  <option value="Transfer">📱 Transfer</option>
-                  <option value="QRIS">📲 QRIS</option>
-                  <option value="Kartu Debit">💳 Kartu Debit</option>
-                  <option value="Kartu Kredit">💎 Kartu Kredit</option>
-                  <option value="DP">🏷️ DP (Uang Muka)</option>
-                  <option value="Belum Dibayar">⏳ Belum Dibayar</option>
+                  <option value="Tunai">Tunai</option>
+                  <option value="Transfer">Transfer</option>
+                  <option value="QRIS">QRIS (Digital)</option>
+                  <option value="Kartu Debit">Kartu Debit</option>
+                  <option value="Kartu Kredit">Kartu Kredit</option>
+                  <option value="DP">DP (Uang Muka)</option>
+                  <option value="Belum Dibayar">Belum Dibayar</option>
                 </select>
               </div>
 
               {metode !== 'Belum Dibayar' && (
                 <div>
-                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 block select-none">
-                    {metode === 'DP' ? '💵 Jumlah DP Diterima' : '💵 Uang Diterima'}
+                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1 select-none">
+                    <Coins className="w-3 h-3 text-slate-400" /> {metode === 'DP' ? 'Jumlah DP Diterima' : 'Uang Diterima'} <span className="text-rose-500 font-bold ml-0.5 animate-pulse">*</span>
                   </label>
                   <input
                     type="number"
@@ -2207,6 +2265,7 @@ export default function App() {
                     setProdFormUkuran('');
                     setProdFormKategori('Umum');
                     setProdFormHarga(0);
+                    setProdFormHargaPokok(0);
                     setProdFormFoto('');
                     setProdFormStok(100);
                     setShowProductForm(true);
@@ -2224,7 +2283,7 @@ export default function App() {
               <div className="bg-slate-50 rounded-2xl border-2 border-primary/20 p-5 shadow-xs animate-fadeIn space-y-4">
                 <div className="flex justify-between items-center pb-2 border-b">
                   <h4 className="font-display font-semibold text-slate-950 text-sm flex items-center gap-1.5">
-                    {editingProduct ? '📝 Edit Data Produk' : '✨ Tambah Katalog Produk'}
+                    {editingProduct ? 'Edit Data Produk' : 'Tambah Katalog Produk'}
                   </h4>
                   <button 
                     onClick={() => {
@@ -2305,6 +2364,17 @@ export default function App() {
                       ))}
                     </datalist>
                   </div>
+                  {/* Harga Pokok */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-550 uppercase tracking-wider block">Harga Pokok / Modal (Rp)</label>
+                    <input
+                      type="number"
+                      placeholder="Contoh: 75000"
+                      value={prodFormHargaPokok || ''}
+                      onChange={(e) => setProdFormHargaPokok(Number(e.target.value))}
+                      className="w-full text-xs p-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-accent"
+                    />
+                  </div>
                   {/* Harga */}
                   <div className="space-y-1">
                     <label className="text-[10px] font-bold text-slate-550 uppercase tracking-wider block">Harga Jual (Rp)</label>
@@ -2363,6 +2433,7 @@ export default function App() {
                         ukuran: ukuranVal,
                         kategori: String(prodFormKategori || ''),
                         harga: Number(prodFormHarga),
+                        hargaPokok: Number(prodFormHargaPokok),
                         foto: prodFormFoto || 'https://images.unsplash.com/photo-1582139329536-e7284fece509?q=80&w=300',
                         stok: Number(prodFormStok),
                       };
@@ -2414,6 +2485,7 @@ export default function App() {
                       <th className="p-3">Kategori</th>
                       <th className="p-3">Ukuran</th>
                       <th className="p-3 text-right">Harga Jual</th>
+                      <th className="p-3 text-right">Harga Pokok (Modal)</th>
                       <th className="p-3 text-center">Stok Fisik</th>
                       <th className="p-3 text-center">Aksi Operasi</th>
                     </tr>
@@ -2421,7 +2493,7 @@ export default function App() {
                   <tbody>
                     {products.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="p-8 text-center text-slate-400">
+                        <td colSpan={8} className="p-8 text-center text-slate-400">
                           Tidak ada produk di sini. Daftarkan produk baru atau beralih ke Mode Excel.
                         </td>
                       </tr>
@@ -2452,8 +2524,11 @@ export default function App() {
                             </span>
                           </td>
                           <td className="p-3 font-mono font-bold text-slate-500">{p.ukuran}</td>
-                          <td className="p-3 text-right font-bold text-emerald-600 font-mono">
+                          <td className="p-3 text-right font-bold text-emerald-500 font-mono">
                             Rp {p.harga.toLocaleString('id-ID')}
+                          </td>
+                          <td className="p-3 text-right font-medium text-slate-550 font-mono">
+                            Rp {(p.hargaPokok || 0).toLocaleString('id-ID')}
                           </td>
                           <td className="p-3 text-center font-bold">
                             <span className={`px-2.5 py-1 rounded-md text-[11px] font-mono leading-none inline-block ${
@@ -2475,6 +2550,7 @@ export default function App() {
                                 setProdFormUkuran(p.ukuran !== undefined && p.ukuran !== null ? String(p.ukuran) : '');
                                 setProdFormKategori(p.kategori !== undefined && p.kategori !== null ? String(p.kategori) : 'Umum');
                                 setProdFormHarga(p.harga !== undefined && p.harga !== null ? Number(p.harga) : 0);
+                                setProdFormHargaPokok(p.hargaPokok !== undefined && p.hargaPokok !== null ? Number(p.hargaPokok) : 0);
                                 setProdFormFoto(p.foto !== undefined && p.foto !== null ? String(p.foto) : '');
                                 setProdFormStok(p.stok !== undefined && p.stok !== null ? Number(p.stok) : 100);
                                 setShowProductForm(true);
@@ -2544,46 +2620,80 @@ export default function App() {
             ) : (
               <>
                 {/* METRICS Bento Grid Block */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
                   {/* Total Sales (Omset) */}
-                  <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-3xs flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-650 flex items-center justify-center text-xl shadow-xs">💵</div>
+                  <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-3xs flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center shadow-xs flex-shrink-0">
+                      <Banknote className="w-5 h-5 text-emerald-600" />
+                    </div>
                     <div>
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block select-none">Omset Penjualan</span>
-                      <span className="text-base font-black font-display text-slate-900">
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block select-none">Omset Jual</span>
+                      <span className="text-sm font-black font-display text-slate-900 leading-tight block">
                         Rp {stats.totalSales.toLocaleString('id-ID')}
                       </span>
                     </div>
                   </div>
 
-                  {/* Transaction Counts */}
-                  <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-3xs flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-650 flex items-center justify-center text-xl shadow-xs">📦</div>
+                  {/* Total Modal (Capital) */}
+                  <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-3xs flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center shadow-xs flex-shrink-0">
+                      <Briefcase className="w-5 h-5 text-slate-500" />
+                    </div>
                     <div>
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block select-none">Total Transaksi</span>
-                      <span className="text-lg font-black font-display text-slate-900">
-                        {stats.transactionCount} Transaksi
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block select-none">Total Modal</span>
+                      <span className="text-sm font-black font-display text-slate-900 leading-tight block">
+                        Rp {stats.totalModal.toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Keuntungan Bersih (Profit) */}
+                  <div className="bg-gradient-to-br from-emerald-500 to-teal-650 rounded-2xl p-4 shadow-3xs flex items-center gap-3 text-white border border-emerald-600">
+                    <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shadow-xs flex-shrink-0">
+                      <Coins className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <span className="text-[9px] font-bold text-white/85 uppercase tracking-widest block select-none">Untung Bersih</span>
+                      <span className="text-sm font-black font-display text-white leading-tight block">
+                        Rp {stats.totalProfit.toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Transaction Counts */}
+                  <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-3xs flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center shadow-xs flex-shrink-0">
+                      <Package className="w-5 h-5 text-indigo-600" />
+                    </div>
+                    <div>
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block select-none">Transaksi</span>
+                      <span className="text-sm font-black font-display text-slate-900 leading-tight block">
+                        {stats.transactionCount} Trans
                       </span>
                     </div>
                   </div>
 
                   {/* Avg Order Values */}
-                  <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-3xs flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-650 flex items-center justify-center text-xl shadow-xs">📈</div>
+                  <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-3xs flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center shadow-xs flex-shrink-0">
+                      <TrendingUp className="w-5 h-5 text-amber-650" />
+                    </div>
                     <div>
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block select-none">Rata-Rata Nota</span>
-                      <span className="text-base font-black font-display text-slate-900">
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block select-none">Rerata Nota</span>
+                      <span className="text-sm font-black font-display text-slate-900 leading-tight block">
                         Rp {stats.averageOrder.toLocaleString('id-ID')}
                       </span>
                     </div>
                   </div>
 
                   {/* Produk Terlaris Stats Card */}
-                  <div className="bg-white rounded-2xl border border-slate-205 p-5 shadow-3xs flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-purple-50 text-purple-650 flex items-center justify-center text-xl shadow-xs">🏆</div>
-                    <div>
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block select-none">Produk Terlaris</span>
-                      <span className="text-sm font-black font-display text-slate-900 truncate max-w-[125px] block" title={stats.productStats[0]?.name}>
+                  <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-3xs flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center shadow-xs flex-shrink-0">
+                      <Award className="w-5 h-5 text-purple-600" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block select-none">Bestseller</span>
+                      <span className="text-xs font-black font-display text-slate-900 truncate block" title={stats.productStats[0]?.name}>
                         {stats.productStats[0]?.name || '-'}
                       </span>
                     </div>
@@ -2601,7 +2711,7 @@ export default function App() {
                       </span>
                       {chartHoverIdx !== null && stats.dailyTrends.length > 0 && (
                         <span className="text-[10px] font-semibold bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full border border-emerald-150 animate-fadeIn">
-                          { [...stats.dailyTrends].reverse()[chartHoverIdx]?.date }: <b>Rp { [...stats.dailyTrends].reverse()[chartHoverIdx]?.sales.toLocaleString('id-ID') }</b>
+                          { [...stats.dailyTrends].reverse()[chartHoverIdx]?.date }: <b>Omset Rp { (([...stats.dailyTrends].reverse()[chartHoverIdx]?.sales) || 0).toLocaleString('id-ID') } | Untung Rp { (([...stats.dailyTrends].reverse()[chartHoverIdx]?.profit) || 0).toLocaleString('id-ID') }</b>
                         </span>
                       )}
                     </h4>
@@ -2844,7 +2954,7 @@ export default function App() {
                                   <span className="text-slate-800 font-bold truncate max-w-[190px]" title={item.name}>{item.name}</span>
                                 </div>
                                 <span className="text-primary font-black flex-shrink-0 text-right">
-                                  {item.count} pcs <span className="text-slate-400 text-[10px] font-medium ml-1.5">(Rp {item.revenue.toLocaleString('id-ID')})</span>
+                                  {item.count} pcs <span className="text-slate-400 text-[10px] font-medium ml-1.5">(Omset Rp {item.revenue.toLocaleString('id-ID')} | Untung Rp {(item.profit || 0).toLocaleString('id-ID')})</span>
                                 </span>
                               </div>
                               <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
@@ -3039,9 +3149,75 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* --- SEKSI 3: INTEGRASI GOOGLE BACKEND --- */}
+                {/* --- SEKSI 3: TAMPILAN & TEMA APLIKASI --- */}
                 <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-100 space-y-4">
-                  <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">3. Integrasi Spreadsheet Cloud</h4>
+                  <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">3. Tema & Tampilan</h4>
+                  <p className="text-[11px] text-slate-500">
+                    Pilih tema tampilan kasir yang paling nyaman untuk mata Anda. Mode Gelap direkomendasikan untuk mengurangi radiasi cahaya dan kelelahan mata di malam hari.
+                  </p>
+
+                  <div className="grid grid-cols-2 gap-4 font-sans">
+                    {/* Light Theme Card */}
+                    <button
+                      type="button"
+                      onClick={() => setIsDarkMode(false)}
+                      className={`p-3.5 rounded-2xl border-2 text-left transition-all cursor-pointer ${
+                        !isDarkMode
+                          ? 'border-accent bg-white shadow-xs'
+                          : 'border-slate-200 bg-slate-100 opacity-60 hover:opacity-100'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-bold text-slate-800">Tema Terang</span>
+                        <div className={`w-4.5 h-4.5 rounded-full flex items-center justify-center border ${
+                          !isDarkMode ? 'border-accent bg-accent text-white' : 'border-slate-300'
+                        }`}>
+                          {!isDarkMode && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
+                        </div>
+                      </div>
+                      <div className="h-10 bg-slate-100 rounded-lg p-1.5 space-y-1 block select-none">
+                        <div className="h-2 w-2/3 bg-slate-300 rounded" />
+                        <div className="grid grid-cols-3 gap-1">
+                          <div className="h-4 bg-white rounded border border-slate-200" />
+                          <div className="h-4 bg-white rounded border border-slate-200" />
+                          <div className="h-4 bg-white rounded border border-slate-200" />
+                        </div>
+                      </div>
+                    </button>
+
+                    {/* Dark Theme Card */}
+                    <button
+                      type="button"
+                      onClick={() => setIsDarkMode(true)}
+                      className={`p-3.5 rounded-2xl border-2 text-left transition-all cursor-pointer ${
+                        isDarkMode
+                          ? 'border-accent bg-slate-900 shadow-xs'
+                          : 'border-slate-200 bg-slate-100 opacity-60 hover:opacity-100'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-bold text-slate-800">Tema Gelap</span>
+                        <div className={`w-4.5 h-4.5 rounded-full flex items-center justify-center border ${
+                          isDarkMode ? 'border-accent bg-accent text-white' : 'border-slate-300'
+                        }`}>
+                          {isDarkMode && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
+                        </div>
+                      </div>
+                      <div className="h-10 bg-slate-850 rounded-lg p-1.5 space-y-1 block select-none">
+                        <div className="h-2 w-2/3 bg-slate-600 rounded" />
+                        <div className="grid grid-cols-3 gap-1">
+                          <div className="h-4 bg-slate-700 rounded border border-slate-600" />
+                          <div className="h-4 bg-slate-700 rounded border border-slate-600" />
+                          <div className="h-4 bg-slate-700 rounded border border-slate-600" />
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
+                {/* --- SEKSI 4: INTEGRASI GOOGLE BACKEND --- */}
+                <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-100 space-y-4">
+                  <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">4. Integrasi Spreadsheet Cloud</h4>
 
                   {/* URL Google Apps Script */}
                   <div>
@@ -3185,10 +3361,11 @@ export default function App() {
         )}
       </main>
 
-      {/* FOOTER BAR */}
-      <footer className="bg-slate-900 text-slate-500 py-4 text-center text-xs border-t border-slate-850 select-none">
-        <p>Copyright &copy; 2026 {storeNameState}. Developed by Santri Dev. All rights reserved.</p>
-        <p className="text-[10px] text-slate-600 mt-1">Made with premium modern technologies &amp; responsive grids.</p>
+      <footer className="bg-slate-900 text-slate-550 py-5 text-center text-xs border-t border-slate-850 select-none">
+        <div className="max-w-7xl mx-auto px-4 space-y-1">
+          <p className="font-semibold text-slate-400">Copyright &copy; 2026 {storeNameState}. All rights reserved.</p>
+          <p className="text-[10px] text-slate-500">Sistem POS Kasir Pintar · Developed by santridev.github.io</p>
+        </div>
       </footer>
 
       {/* TOAST SYSTEM */}

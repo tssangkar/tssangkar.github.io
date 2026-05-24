@@ -6,6 +6,7 @@ export interface Product {
   kategori: string;
   foto: string;
   stok?: number;
+  hargaPokok?: number;
 }
 
 export interface CartItem extends Product {
