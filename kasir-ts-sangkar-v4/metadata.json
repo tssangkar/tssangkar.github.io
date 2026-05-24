@@ -1,0 +1,6 @@
+{
+  "name": "Kasir Pintar",
+  "description": "Aplikasi Kasir profesional yang fleksibel untuk segala jenis toko, dikembangkan oleh Santri Dev, terintegrasi dengan Google Sheets.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
