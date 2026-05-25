@@ -1857,7 +1857,7 @@ export default function App() {
             <div className="flex items-center gap-4.5 z-10">
               <div className="flex-shrink-0 w-14 h-14 bg-white/10 rounded-xl p-1 backdrop-blur-md border border-white/20 flex items-center justify-center shadow-md">
                 <img
-                  src="./logo_rizquna.png"
+                  src="/logo_rizquna.png"
                   alt="Rizquna Logo"
                   className="w-12 h-12 rounded-lg object-cover"
                   onError={(e) => {
