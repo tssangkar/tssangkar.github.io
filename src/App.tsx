@@ -861,10 +861,13 @@ export default function App() {
       // Render custom receipt template dynamically to match html2canvas layout specs
       const elementHtml = `
         <div style="font-family:'Segoe UI',Arial,sans-serif;width:440px;background:#ffffff;color:#111827;padding:24px;border:1px solid #e5e7eb;border-radius:8px;">
-          <div style="text-align:center;padding-bottom:14px;border-bottom:2px dashed #d1d5db;">
-            ${storeLogoState && storeLogoState !== 'ts.png' ? `<img src="${storeLogoState}" style="width:70px;height:auto;border-radius:50%;margin-bottom:6px;object-fit:cover;" onerror="this.style.display='none'" />` : ''}
-            <div style="font-size:20px;font-weight:800;letter-spacing:1px;color:#1e1b4b;margin-bottom:3px;text-transform:uppercase;">${storeNameState}</div>
-            <div style="font-size:11px;color:#4b5563;">${storeSloganState}</div>
+          <div style="text-align:center;padding-bottom:14px;border-bottom:2px dashed #d1d5db;display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;">
+            ${storeLogoState && storeLogoState !== 'ts.png' ? `
+              <div style="display:flex;justify-content:center;align-items:center;margin:0 auto 10px auto;width:100%;">
+                <img src="${storeLogoState}" style="width:70px;height:70px;border-radius:50%;object-fit:cover;display:block;" onerror="this.style.display='none'" />
+              </div>` : ''}
+            <div style="font-size:20px;font-weight:800;letter-spacing:1px;color:#1e1b4b;margin-bottom:3px;text-transform:uppercase;text-align:center;width:100%;">${storeNameState}</div>
+            <div style="font-size:11px;color:#4b5563;text-align:center;width:100%;">${storeSloganState}</div>
           </div>
           <div style="padding:10px 0;font-size:11px;border-bottom:1px solid #f3f4f6;">
             <table style="width:100%;">
@@ -1922,7 +1925,7 @@ export default function App() {
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <input
                 type="text"
-                placeholder="Cari nama, kode/ID, atau ukuran..."
+                placeholder="Cari nama, kode/ID, atau varian..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full py-2.5 pl-10 pr-18 bg-slate-50 border border-slate-200 rounded-full text-xs transition-all focus:outline-none focus:border-accent focus:bg-white focus:ring-2 focus:ring-accent/15 placeholder:text-slate-400 text-slate-700 font-medium"
@@ -2033,7 +2036,7 @@ export default function App() {
                         </span>
                       )}
                       <span className="text-[10px] text-slate-400 font-medium mt-1 inline-flex items-center gap-1 select-none">
-                        📐 Ukuran: {p.ukuran}
+                        📐 Varian: {p.ukuran}
                       </span>
                       <div className="mt-auto pt-2 flex items-center justify-between">
                         <span className="font-extrabold text-xs md:text-sm text-emerald-600">
@@ -2087,7 +2090,7 @@ export default function App() {
                     <div>
                       <h5 className="font-extrabold text-slate-800 leading-tight">{item.nama}</h5>
                       <span className="text-[10px] text-slate-400 block mt-0.5 select-none font-medium">
-                        Ukuran: {item.ukuran}
+                        Varian: {item.ukuran}
                       </span>
                     </div>
                     <button
@@ -2491,7 +2494,7 @@ export default function App() {
                   </div>
                   {/* Ukuran */}
                   <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-550 uppercase tracking-wider block">Spesifikasi Ukuran</label>
+                    <label className="text-[10px] font-bold text-slate-550 uppercase tracking-wider block">Spesifikasi Varian</label>
                     <input
                       type="text"
                       placeholder="Contoh: 40x40, Set, 47x42..."
@@ -2581,7 +2584,7 @@ export default function App() {
                       const namaVal = String(prodFormNama || '').trim();
                       const ukuranVal = String(prodFormUkuran || '').trim();
                       if (!namaVal || !ukuranVal) {
-                        triggerToast('Nama produk & ukuran wajib diisi!', 'warning');
+                        triggerToast('Nama produk & varian wajib diisi!', 'warning');
                         return;
                       }
                       const payload = {
@@ -2639,7 +2642,7 @@ export default function App() {
                       <th className="p-3 text-center w-14">Preview</th>
                       <th className="p-3">Nama Produk</th>
                       <th className="p-3">Kategori</th>
-                      <th className="p-3">Ukuran</th>
+                      <th className="p-3">Varian</th>
                       <th className="p-3 text-right">Harga Jual</th>
                       <th className="p-3 text-right">Harga Pokok (Modal)</th>
                       <th className="p-3 text-center">Stok Fisik</th>
@@ -3671,7 +3674,7 @@ export default function App() {
                 <span className="font-bold text-slate-800">{deleteConfirmProduct.nama}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">Spesifikasi Ukuran:</span>
+                <span className="text-slate-400">Spesifikasi Varian:</span>
                 <span className="font-semibold text-slate-705">{deleteConfirmProduct.ukuran || '-'}</span>
               </div>
               <div className="flex justify-between">
