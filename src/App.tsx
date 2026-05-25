@@ -21,21 +21,24 @@ import {
   Share2,
   RotateCcw,
   X,
-  Menu,
   PlusCircle,
   TrendingUp,
   Settings,
   BarChart3,
+  Menu,
+  Camera,
+  Briefcase,
+  Award,
+  Package,
+  Banknote,
+  Truck,
+  Percent,
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
+import { Html5Qrcode } from 'html5-qrcode';
 import { INITIAL_PRODUCTS, SHEET_API_URL, SHEET_API_URL_PESANAN } from './data/products';
 import { Product, CartItem, TransactionData } from './types';
 import Receipt from './components/Receipt';
-
-type BeforeInstallPromptEvent = Event & {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
-};
 
 // Helper function to convert Google Drive URL to high-performance Thumbnail URL
 const getGoogleDriveThumbnailUrl = (url: string): string => {
@@ -76,7 +79,29 @@ export default function App() {
       foto: getGoogleDriveThumbnailUrl(p.foto)
     }))
   );
+  const productsRef = useRef<Product[]>(products);
+  useEffect(() => {
+    productsRef.current = products;
+  }, [products]);
   const [loading, setLoading] = useState<boolean>(false);
+
+  const [gasUrlState, setGasUrlState] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('ts_sangkar_gas_url');
+      return saved || SHEET_API_URL || '';
+    } catch (e) {
+      return SHEET_API_URL || '';
+    }
+  });
+
+  const [sheetIdState, setSheetIdState] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('ts_sangkar_sheet_id');
+      return saved || '19981hn179EkrhmnlGCBPl5ZVhx84O1KMaglrq9RKVCI';
+    } catch (e) {
+      return '19981hn179EkrhmnlGCBPl5ZVhx84O1KMaglrq9RKVCI';
+    }
+  });
   const [cart, setCart] = useState<CartItem[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -93,6 +118,87 @@ export default function App() {
   const [uangDiterima, setUangDiterima] = useState<number>(0);
   const [dpDiterima, setDpDiterima] = useState<number>(0);
 
+  // Theme states
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('ts_sangkar_theme');
+      return saved === 'dark';
+    } catch (e) {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('ts_sangkar_theme', isDarkMode ? 'dark' : 'light');
+    } catch (e) {
+      console.error(e);
+    }
+  }, [isDarkMode]);
+
+  // PWA states & listeners
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [showInstallBanner, setShowInstallBanner] = useState<boolean>(() => {
+    try {
+      // Don't show if user previously dismissed it
+      const dismissed = localStorage.getItem('ts_sangkar_pwa_dismissed');
+      return dismissed !== 'true';
+    } catch (e) {
+      return true;
+    }
+  });
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: any) => {
+      // Prevent default browser prompt
+      e.preventDefault();
+      // Save event so we can trigger it later
+      setDeferredPrompt(e);
+      // Only show banner if not previously dismissed
+      const dismissed = localStorage.getItem('ts_sangkar_pwa_dismissed');
+      if (dismissed !== 'true') {
+        setShowInstallBanner(true);
+      }
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    // Also support checking if app is already running in standalone (installed) mode
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+      setShowInstallBanner(false);
+    }
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const handleInstallPWA = async () => {
+    if (!deferredPrompt) {
+      // Fallback message for older/unsupported browsers
+      alert('Untuk menginstal di perangkat Anda:\n- Safari iOS: klik tombol Share lalu pilih "Add to Home Screen".\n- Chrome/Firefox: Klik menu tiga titik lalu pilih "Instal" atau "Tambahkan ke Layar Utama".');
+      return;
+    }
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      console.log('User accepted the PWA install prompt');
+      setShowInstallBanner(false);
+    } else {
+      console.log('User dismissed the PWA install prompt');
+    }
+    setDeferredPrompt(null);
+  };
+
+  const handleDismissInstallBanner = () => {
+    try {
+      localStorage.setItem('ts_sangkar_pwa_dismissed', 'true');
+    } catch (e) {
+      console.error(e);
+    }
+    setShowInstallBanner(false);
+  };
+
   // Time & date states
   const [currentTime, setCurrentTime] = useState<string>('');
   const [currentDate, setCurrentDate] = useState<string>('');
@@ -101,11 +207,6 @@ export default function App() {
   const [toastMessage, setToastMessage] = useState<string>('');
   const [toastType, setToastType] = useState<'success' | 'warning' | 'error' | 'info'>('success');
   const [showToast, setShowToast] = useState<boolean>(false);
-  // PWA install prompt states
-  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [showInstallButton, setShowInstallButton] = useState<boolean>(false);
-  const [isAppInstalled, setIsAppInstalled] = useState<boolean>(false);
-  const [showInstallGuide, setShowInstallGuide] = useState<boolean>(false);
 
   // Hidden Capture Container ref
   const captureRef = useRef<HTMLDivElement>(null);
@@ -137,24 +238,66 @@ export default function App() {
 
   // Fetch products from Google Apps Script Web App
   const loadProducts = async (quiet = false) => {
-    if (!SHEET_API_URL || SHEET_API_URL.trim() === '' || SHEET_API_URL.includes('PASTE_YOUR_URL')) {
+    if (!gasUrlState || gasUrlState.trim() === '' || gasUrlState.includes('PASTE_YOUR_URL')) {
       return;
     }
     if (!quiet) setLoading(true);
     try {
-      const urlWithAction = `${SHEET_API_URL}${SHEET_API_URL.includes('?') ? '&' : '?'}action=getProducts`;
+      const urlWithAction = `${gasUrlState}${gasUrlState.includes('?') ? '&' : '?'}action=getProducts`;
       const response = await fetch(urlWithAction);
       if (!response.ok) throw new Error('Gagal mengambil produk');
       const data = await response.json();
+      
+      // Pembantu konversi nomor kuat pencegah bug format mata uang lokal (Indonesian format 10.000 atau Rp. 10.000)
+      const safeParseNumber = (val: any): number => {
+        if (val === undefined || val === null || val === '') return 0;
+        if (typeof val === 'number') return val;
+        
+        let cleaned = String(val).trim();
+        // Bersihkan simbol mata uang rupiah dan asing
+        cleaned = cleaned.replace(/^(Rp\.?\s*|IDR\s*|\$)/gi, '');
+        
+        // Cek jika string mengandung titik dan koma (misal: 1.250,50 atau 1,250.50)
+        if (cleaned.includes('.') && cleaned.includes(',')) {
+          const lastDot = cleaned.lastIndexOf('.');
+          const lastComma = cleaned.lastIndexOf(',');
+          if (lastDot > lastComma) {
+            // Gaya US: Koma ribuan, Titik desimal
+            cleaned = cleaned.replace(/,/g, '');
+          } else {
+            // Gaya ID: Titik ribuan, Koma desimal
+            cleaned = cleaned.replace(/\./g, '').replace(/,/g, '.');
+          }
+        } else if (cleaned.includes('.')) {
+          // Hanya ada titik. Jika diikuti 3 digit desimal, itu pemisah ribuan Rupiah
+          const parts = cleaned.split('.');
+          if (parts.length > 1 && parts[parts.length - 1].length === 3) {
+            cleaned = cleaned.replace(/\./g, '');
+          }
+        } else if (cleaned.includes(',')) {
+          // Hanya ada koma. Jika diikuti 3 desimal, perlakukan sebagai pemisah ribuan
+          const parts = cleaned.split(',');
+          if (parts.length > 1 && parts[parts.length - 1].length === 3) {
+            cleaned = cleaned.replace(/,/g, '');
+          } else {
+            cleaned = cleaned.replace(/,/g, '.');
+          }
+        }
+        
+        const parsed = Number(cleaned);
+        return isNaN(parsed) ? 0 : parsed;
+      };
+
       if (Array.isArray(data)) {
         const mapped: Product[] = data.map((item: any) => ({
           id: item.id !== undefined && item.id !== null ? String(item.id) : '',
           nama: item.nama_produk !== undefined && item.nama_produk !== null ? String(item.nama_produk) : '',
           ukuran: item.ukuran !== undefined && item.ukuran !== null ? String(item.ukuran) : '',
-          harga: Number(item.harga) || 0,
+          harga: safeParseNumber(item.harga),
           kategori: item.kategori !== undefined && item.kategori !== null ? String(item.kategori) : '',
           foto: getGoogleDriveThumbnailUrl(item.foto_url || ''),
-          stok: item.stok !== undefined && item.stok !== '' ? Number(item.stok) : 100,
+          stok: item.stok !== undefined && item.stok !== '' ? safeParseNumber(item.stok) : 100,
+          hargaPokok: item.harga_pokok !== undefined && item.harga_pokok !== null ? safeParseNumber(item.harga_pokok) : 0,
         }));
         setProducts(mapped);
         if (!quiet) triggerToast('Katalog produk disinkronkan dari Google Sheets!', 'success');
@@ -169,25 +312,25 @@ export default function App() {
 
   useEffect(() => {
     loadProducts(true);
-  }, []);
+  }, [gasUrlState]);
 
   // CRUD implementation for products
-  const addProductToSheet = async (newProd: Omit<Product, 'id'>) => {
+  const addProductToSheet = async (newProd: Product) => {
     setLoading(true);
     try {
       // Local backup addition first so user sees immediate results
-      const localId = 'temp-' + Date.now();
+      const localId = newProd.id || 'temp-' + Date.now();
       const localAdd: Product = { ...newProd, id: localId };
       setProducts(prev => [...prev, localAdd]);
 
-      if (!SHEET_API_URL || SHEET_API_URL.trim() === '' || SHEET_API_URL.includes('PASTE_YOUR_URL')) {
+      if (!gasUrlState || gasUrlState.trim() === '' || gasUrlState.includes('PASTE_YOUR_URL')) {
         triggerToast('Produk disimpan lokal (Konfigurasi GAS belum aktif!)', 'info');
         setLoading(false);
         return true;
       }
 
       // We send simple request bypasses CORS preflight in GAS Web Apps
-      const response = await fetch(SHEET_API_URL, {
+      const response = await fetch(gasUrlState, {
         method: 'POST',
         headers: {
           'Content-Type': 'text/plain;charset=utf-8'
@@ -195,13 +338,15 @@ export default function App() {
         body: JSON.stringify({
           action: 'addProduct',
           data: {
+            id: newProd.id || undefined, // Send specified ID if entered manually
             kategori: newProd.kategori,
             nama_produk: newProd.nama,
             ukuran: newProd.ukuran,
             tipe: 'Mentah', 
             harga: newProd.harga,
             foto_url: newProd.foto,
-            stok: newProd.stok !== undefined ? newProd.stok : 100
+            stok: newProd.stok !== undefined ? newProd.stok : 100,
+            harga_pokok: newProd.hargaPokok || 0
           }
         })
       });
@@ -244,13 +389,13 @@ export default function App() {
         return isMatch ? editedProd : p;
       }));
 
-      if (!SHEET_API_URL || SHEET_API_URL.trim() === '' || SHEET_API_URL.includes('PASTE_YOUR_URL')) {
+      if (!gasUrlState || gasUrlState.trim() === '' || gasUrlState.includes('PASTE_YOUR_URL')) {
         triggerToast('Perubahan disimpan lokal (GAS belum aktif)', 'info');
         setLoading(false);
         return true;
       }
 
-      const response = await fetch(SHEET_API_URL, {
+      const response = await fetch(gasUrlState, {
         method: 'POST',
         headers: {
           'Content-Type': 'text/plain;charset=utf-8'
@@ -265,7 +410,8 @@ export default function App() {
             tipe: 'Mentah',
             harga: editedProd.harga,
             foto_url: editedProd.foto,
-            stok: editedProd.stok !== undefined ? editedProd.stok : 100
+            stok: editedProd.stok !== undefined ? editedProd.stok : 100,
+            harga_pokok: editedProd.hargaPokok || 0
           }
         })
       });
@@ -306,13 +452,13 @@ export default function App() {
         return !isMatch;
       }));
 
-      if (!SHEET_API_URL || SHEET_API_URL.trim() === '' || SHEET_API_URL.includes('PASTE_YOUR_URL')) {
+      if (!gasUrlState || gasUrlState.trim() === '' || gasUrlState.includes('PASTE_YOUR_URL')) {
         triggerToast('Produk dihapus lokal', 'info');
         setLoading(false);
         return true;
       }
 
-      const response = await fetch(SHEET_API_URL, {
+      const response = await fetch(gasUrlState, {
         method: 'POST',
         headers: {
           'Content-Type': 'text/plain;charset=utf-8'
@@ -368,64 +514,14 @@ export default function App() {
     }, 3000);
   };
 
-  // PWA: listen for install prompt and appinstalled
-  useEffect(() => {
-    const beforeHandler = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e as BeforeInstallPromptEvent);
-      setShowInstallButton(true);
-    };
-
-    const installedHandler = () => {
-      setIsAppInstalled(true);
-      setShowInstallButton(false);
-      triggerToast('Aplikasi berhasil dipasang!', 'success');
-    };
-
-    window.addEventListener('beforeinstallprompt', beforeHandler as EventListener);
-    window.addEventListener('appinstalled', installedHandler);
-
-    // if main registered a deferred prompt earlier
-    const saved = (window as any).deferredPwaPrompt;
-    if (saved) {
-      setDeferredPrompt(saved as BeforeInstallPromptEvent);
-      setShowInstallButton(true);
-    }
-
-    return () => {
-      window.removeEventListener('beforeinstallprompt', beforeHandler as EventListener);
-      window.removeEventListener('appinstalled', installedHandler);
-    };
-  }, []);
-
-  const handleInstallClick = async () => {
-    if (!deferredPrompt) {
-      setShowInstallGuide(true);
-      return;
-    }
-    try {
-      await deferredPrompt.prompt();
-      const choice = await deferredPrompt.userChoice;
-      if (choice.outcome === 'accepted') {
-        setShowInstallButton(false);
-        triggerToast('Terima kasih! Aplikasi telah ditambahkan ke perangkat.', 'success');
-      } else {
-        triggerToast('Instalasi dibatalkan.', 'info');
-      }
-    } catch (e) {
-      console.warn('Install prompt error', e);
-    } finally {
-      setDeferredPrompt(null);
-    }
-  };
-
   // Filter products by searching and category selection
   const filteredProducts = products.filter((p) => {
     const matchesCategory = selectedCategory === 'all' || p.kategori === selectedCategory;
     const matchesKeyword =
       p.nama.toLowerCase().includes(searchQuery.toLowerCase()) ||
       p.kategori.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.ukuran.toLowerCase().includes(searchQuery.toLowerCase());
+      p.ukuran.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (p.id !== undefined && p.id !== null && String(p.id).toLowerCase().includes(searchQuery.toLowerCase()));
     return matchesCategory && matchesKeyword;
   });
 
@@ -450,26 +546,43 @@ export default function App() {
 
   // Handle adding products to cart
   const addToCart = (p: Product) => {
-    const productStock = p.stok !== undefined ? p.stok : 100;
-    const existingIndex = cart.findIndex((item) => item.nama === p.nama && item.ukuran === p.ukuran);
-    
-    if (existingIndex > -1) {
-      const currentQty = cart[existingIndex].qty;
-      if (currentQty >= productStock) {
-        triggerToast(`Stok tidak mencukupi! Hanya ada ${productStock} unit tersisa.`, 'warning');
-        return;
+    let message = '';
+    let msgType: 'success' | 'warning' | 'error' | 'info' = 'success';
+
+    setCart((prevCart) => {
+      const productStock = p.stok !== undefined ? p.stok : 100;
+      const existingIndex = prevCart.findIndex((item) => item.nama === p.nama && item.ukuran === p.ukuran);
+      
+      if (existingIndex > -1) {
+        const currentQty = prevCart[existingIndex].qty;
+        if (currentQty >= productStock) {
+          message = `Stok tidak mencukupi! Hanya ada ${productStock} unit tersisa.`;
+          msgType = 'warning';
+          return prevCart;
+        }
+        const updated = [...prevCart];
+        updated[existingIndex] = {
+          ...updated[existingIndex],
+          qty: updated[existingIndex].qty + 1
+        };
+        message = `Ditambahkan: ${p.nama}`;
+        msgType = 'success';
+        return updated;
+      } else {
+        if (productStock <= 0) {
+          message = `Stok produk "${p.nama}" sedang kosong!`;
+          msgType = 'warning';
+          return prevCart;
+        }
+        message = `Ditambahkan: ${p.nama}`;
+        msgType = 'success';
+        return [...prevCart, { ...p, qty: 1, note: '' }];
       }
-      const updated = [...cart];
-      updated[existingIndex].qty += 1;
-      setCart(updated);
-    } else {
-      if (productStock <= 0) {
-        triggerToast(`Stok produk "${p.nama}" sedang kosong!`, 'warning');
-        return;
-      }
-      setCart([...cart, { ...p, qty: 1, note: '' }]);
+    });
+
+    if (message) {
+      setTimeout(() => triggerToast(message, msgType), 10);
     }
-    triggerToast(`Ditambahkan: ${p.nama}`, 'success');
   };
 
   // Adjust product quantities in cart
@@ -498,10 +611,13 @@ export default function App() {
 
   const clearCart = () => {
     if (cart.length === 0) return;
-    if (confirm('Kosongkan seluruh keranjang?')) {
-      setCart([]);
-      triggerToast('Keranjang dikosongkan', 'info');
-    }
+    setShowConfirmClearCart(true);
+  };
+
+  const executeClearCart = () => {
+    setCart([]);
+    triggerToast('Keranjang dikosongkan', 'info');
+    setShowConfirmClearCart(false);
   };
 
   // Prepare transaction parameters object
@@ -537,6 +653,7 @@ export default function App() {
         qty: c.qty,
         harga: c.harga,
         catatan: c.note || '',
+        hargaPokok: c.hargaPokok || 0,
       })),
       subtotal: getSubtotal(),
       diskonPct: diskon,
@@ -557,17 +674,43 @@ export default function App() {
       return;
     }
 
+    if (!nama.trim()) {
+      triggerToast('Nama pelanggan wajib diisi sebelum checkout!', 'warning');
+      return;
+    }
+
+    const totalBayar = getTotal();
+    if (metode === 'Tunai' || metode === 'Transfer' || metode === 'QRIS' || metode === 'Kartu Debit' || metode === 'Kartu Kredit') {
+      if (!uangDiterima || uangDiterima <= 0) {
+        triggerToast('Jumlah uang diterima wajib diisi!', 'warning');
+        return;
+      }
+      if (uangDiterima < totalBayar) {
+        triggerToast(`Uang diterima (Rp ${uangDiterima.toLocaleString('id-ID')}) kurang dari total tagihan (Rp ${totalBayar.toLocaleString('id-ID')})!`, 'warning');
+        return;
+      }
+    } else if (metode === 'DP') {
+      if (!dpDiterima || dpDiterima <= 0) {
+        triggerToast('Uang DP diterima wajib diisi!', 'warning');
+        return;
+      }
+      if (dpDiterima >= totalBayar) {
+        triggerToast(`Uang DP tidak boleh lebih besar atau sama dengan total tagihan! Silakan gunakan metode pembayaran Lunas (Tunai/Transfer).`, 'warning');
+        return;
+      }
+    }
+
     const receiptData = getTransactionData();
     triggerToast('Menyimpan transaksi ke cloud...', 'info');
 
     // Submit back in a fire-and-forget/no-cors design to sheet
     if (
-      SHEET_API_URL_PESANAN &&
-      SHEET_API_URL_PESANAN.trim() !== '' &&
-      !SHEET_API_URL_PESANAN.includes('PASTE_YOUR_URL')
+      gasUrlState &&
+      gasUrlState.trim() !== '' &&
+      !gasUrlState.includes('PASTE_YOUR_URL')
     ) {
       try {
-        await fetch(SHEET_API_URL_PESANAN, {
+        await fetch(gasUrlState, {
           method: 'POST',
           mode: 'no-cors',
           headers: { 'Content-Type': 'application/json' },
@@ -636,7 +779,7 @@ export default function App() {
                         <tr style="border-bottom:1px solid #eee;">
                           <td style="padding:6px 4px;">
                             \${item.nama} <span style="font-size:9;color:#777;">(\${item.ukuran})</span>
-                            \${item.catatan ? '<div style="font-size:9px;color:#888;">📝 ' + item.catatan + '</div>' : ''}
+                            \${item.catatan ? '<div style="font-size:9px;color:#888;">Catatan: ' + item.catatan + '</div>' : ''}
                           </td>
                           <td style="text-align:center;padding:6px 4px;">\${item.qty}</td>
                           <td style="text-align:right;padding:6px 4px;">Rp \${item.harga.toLocaleString('id-ID')}</td>
@@ -653,10 +796,10 @@ export default function App() {
                   <div style="display:flex;justify-content:space-between;"><span>Biaya Tambahan:</span><strong>Rp ${receiptData.tambahan.toLocaleString('id-ID')}</strong></div>
                   <div style="border-top:1px solid #111;margin:6px 0;"></div>
                   <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:800;"><span>TOTAL:</span><span>Rp ${receiptData.total.toLocaleString('id-ID')}</span></div>
-                  <div style="margin-top:6px;">💳 Metode: <strong>${receiptData.metode === 'DP' ? '🏷️ DP (Uang Muka)' : receiptData.metode}</strong></div>
+                  <div style="margin-top:6px;">Metode: <strong>${receiptData.metode === 'DP' ? 'DP (Uang Muka)' : receiptData.metode}</strong></div>
                   ${
                     receiptData.metode === 'Belum Dibayar'
-                      ? `<div style="margin-top:6px;padding:6px;background:#fff9eb;border:1px solid #fde68a;text-align:center;">⏳ Bayar saat barang diambil</div>`
+                      ? `<div style="margin-top:6px;padding:6px;background:#fff9eb;border:1px solid #fde68a;text-align:center;">Bayar saat barang diambil</div>`
                       : `
                     <div style="display:flex;justify-content:space-between;margin-top:3px;"><span>Uang Masuk:</span><strong>Rp ${receiptData.uangDiterima.toLocaleString('id-ID')}</strong></div>
                     <div style="display:flex;justify-content:space-between;font-weight:700;\${${receiptData.change} >=0 ? 'color:green' : 'color:red'}">
@@ -667,9 +810,10 @@ export default function App() {
                   }
                 </div>
                 <div style="text-align:center;margin-top:20px;padding-top:10px;border-top:2px dashed #ddd;font-size:9px;color:#777;">
-                  <p style="margin:2px 0;">🙏 Terima kasih atas kepercayaan Anda</p>
+                  <p style="margin:2px 0;">Terima kasih atas kepercayaan Anda</p>
                   <p style="margin:2px 0;font-weight:600;text-transform:uppercase;">· ${storeNameState} ·</p>
                   <p style="margin:2px 0;">${storeAlamatState}</p>
+                  ${storeKontakState ? `<p style="margin:2px 0;font-weight:500;">${storeKontakState}</p>` : ''}
                 </div>
               </div>
             \`;
@@ -755,7 +899,7 @@ export default function App() {
                   <tr style="border-bottom:1px solid #f3f4f6;">
                     <td style="padding:6px;">
                       ${item.nama} <span style="font-size:9px;color:#6b7280;">(${item.ukuran})</span>
-                      ${item.catatan ? `<div style="font-size:9px;color:#888;">📝 ${item.catatan}</div>` : ''}
+                      ${item.catatan ? `<div style="font-size:9px;color:#888;">Catatan: ${item.catatan}</div>` : ''}
                     </td>
                     <td style="padding:6px;text-align:center;">${item.qty}</td>
                     <td style="padding:6px;text-align:right;font-weight:600;">Rp ${(item.qty * item.harga).toLocaleString('id-ID')}</td>
@@ -773,10 +917,10 @@ export default function App() {
             <div style="display:flex;justify-content:space-between;"><span>Biaya Tambahan:</span><span>Rp ${receiptData.tambahan.toLocaleString('id-ID')}</span></div>
             <div style="border-top:1.5px solid #111827;margin:6px 0;"></div>
             <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:800;color:#111827;"><span>TOTAL TAGIHAN:</span><span>Rp ${receiptData.total.toLocaleString('id-ID')}</span></div>
-            <div style="margin-top:6px;color:#4b5563;">💳 Metode: <strong>${receiptData.metode === 'DP' ? '🏷️ DP (Uang Muka)' : receiptData.metode}</strong></div>
+            <div style="margin-top:6px;color:#4b5563;">Metode: <strong>${receiptData.metode === 'DP' ? 'DP (Uang Muka)' : receiptData.metode}</strong></div>
             ${
               receiptData.metode === 'Belum Dibayar'
-                ? `<div style="margin-top:6px;padding:6px;background:#fffbeb;border:1px solid #fef3c7;border-radius:4px;color:#b45309;text-align:center;">⏳ Pembayaran saat pengambilan</div>`
+                ? `<div style="margin-top:6px;padding:6px;background:#fffbeb;border:1px solid #fef3c7;border-radius:4px;color:#b45309;text-align:center;">Pembayaran saat pengambilan</div>`
                 : `
               <div style="display:flex;justify-content:space-between;margin-top:4px;"><span>Uang Diterima:</span><span>Rp ${receiptData.uangDiterima.toLocaleString('id-ID')}</span></div>
               <div style="display:flex;justify-content:space-between;font-weight:700;margin-top:2px;">
@@ -787,9 +931,10 @@ export default function App() {
             }
           </div>
           <div style="text-align:center;margin-top:20px;padding-top:12px;border-top:1.5px dashed #d1d5db;font-size:9px;color:#6b7280;">
-            <p style="margin:2px 0;">🙏 Terima kasih atas kepercayaan Anda</p>
+            <p style="margin:2px 0;">Terima kasih atas kepercayaan Anda</p>
             <p style="margin:2px 0;font-weight:600;color:#374151;text-transform:uppercase;">· ${storeNameState} ·</p>
             <p style="margin:2px 0;">${storeAlamatState}</p>
+            ${storeKontakState ? `<p style="margin:2px 0;font-weight:550;">${storeKontakState}</p>` : ''}
           </div>
         </div>
       `;
@@ -887,7 +1032,14 @@ export default function App() {
 
   // Reset workstates to defaults
   const resetAll = () => {
-    if (cart.length > 0 && !confirm('Reset seluruh transaksi aktif?')) return;
+    if (cart.length > 0 || nama || alamat || kontak || estimasi || ongkir > 0 || tambahan > 0 || diskon > 0 || uangDiterima > 0) {
+      setShowConfirmReset(true);
+    } else {
+      executeResetAll();
+    }
+  };
+
+  const executeResetAll = () => {
     setCart([]);
     setNama('');
     setAlamat('');
@@ -902,15 +1054,61 @@ export default function App() {
     setSearchQuery('');
     setSelectedCategory('all');
     triggerToast('Seluruh kolom disetel ulang!', 'success');
+    setShowConfirmReset(false);
   };
 
   // ==================== CUSTOM STORE CONFIGURATION ====================
   const [activeTab, setActiveTab ] = useState<'pos' | 'products' | 'reports' | 'settings'>('pos');
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
-  const [storeNameState, setStoreNameState] = useState<string>('KASIR PINTAR');
-  const [storeSloganState, setStoreSloganState] = useState<string>('Sistem Kasir Fleksibel Multi-Fungsi');
-  const [storeAlamatState, setStoreAlamatState] = useState<string>('🌐 santridev.github.io | 📞 0812-3456-7890');
-  const [storeLogoState, setStoreLogoState] = useState<string>('store.png');
+  const [storeNameState, setStoreNameState] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('ts_sangkar_store_config');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.namaToko || 'KASIR PINTAR';
+      }
+    } catch {}
+    return 'KASIR PINTAR';
+  });
+  const [storeSloganState, setStoreSloganState] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('ts_sangkar_store_config');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.sloganToko || 'Sistem Kasir Fleksibel Multi-Fungsi';
+      }
+    } catch {}
+    return 'Sistem Kasir Fleksibel Multi-Fungsi';
+  });
+  const [storeAlamatState, setStoreAlamatState] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('ts_sangkar_store_config');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.alamatToko !== undefined ? parsed.alamatToko : '🌐 santridev.github.io';
+      }
+    } catch {}
+    return '🌐 santridev.github.io';
+  });
+  const [storeKontakState, setStoreKontakState] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('ts_sangkar_store_config');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.kontakToko !== undefined ? parsed.kontakToko : '📞 0812-3456-7890';
+      }
+    } catch {}
+    return '📞 0812-3456-7890';
+  });
+  const [storeLogoState, setStoreLogoState] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('ts_sangkar_store_config');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.logoToko || 'store.png';
+      }
+    } catch {}
+    return 'store.png';
+  });
 
   // Product CRUD states
   const [showProductForm, setShowProductForm] = useState<boolean>(false);
@@ -919,11 +1117,147 @@ export default function App() {
   const [prodFormUkuran, setProdFormUkuran] = useState<string>('');
   const [prodFormKategori, setProdFormKategori] = useState<string>('Umum');
   const [prodFormHarga, setProdFormHarga] = useState<number>(0);
+  const [prodFormHargaPokok, setProdFormHargaPokok] = useState<number>(0);
   const [prodFormFoto, setProdFormFoto] = useState<string>('');
-  const [prodFormStok, setProdFormStok] = useState<number>(100);
+  const [prodFormStok, setProdFormStok ] = useState<number>(100);
+  const [prodFormId, setProdFormId] = useState<string>('');
+
+  // Barcode Camera Scanner States & Refs
+  const [isScannerOpen, setIsScannerOpen ] = useState<boolean>(false);
+  const [scannerPurpose, setScannerPurpose ] = useState<'productId' | 'posSearch'>('productId');
+  const [lastScannedItem, setLastScannedItem ] = useState<string | null>(null);
+  const scannerRef = useRef<Html5Qrcode | null>(null);
+  const scanCooldownRef = useRef<{ [code: string]: number }>({});
+
+  // Mobile Hamburger Menu State
+  const [isMobileMenuOpen, setIsMobileMenuOpen ] = useState<boolean>(false);
+
+  // Cashier beep sound using Web Audio API (highly standard and interactive)
+  const playBeep = () => {
+    try {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const oscillator = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+      oscillator.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(1200, audioCtx.currentTime); // High pitch professional cashier beep
+      gainNode.gain.setValueAtTime(0.12, audioCtx.currentTime); 
+      
+      oscillator.start();
+      oscillator.stop(audioCtx.currentTime + 0.12); // Beep duration 120ms
+    } catch (e) {
+      console.warn("Audio Context blocked or not supported:", e);
+    }
+  };
+
+  // Start Barcode Scanner using camera
+  const startScanner = async (purpose: 'productId' | 'posSearch') => {
+    setScannerPurpose(purpose);
+    setIsScannerOpen(true);
+    setLastScannedItem(null);
+    
+    // Allow React to mount the HTML div #barcode-scanner-viewport
+    setTimeout(async () => {
+      try {
+        if (scannerRef.current) {
+          await stopScanner();
+        }
+        const scanner = new Html5Qrcode("barcode-scanner-viewport");
+        scannerRef.current = scanner;
+        
+        await scanner.start(
+          { facingMode: "environment" },
+          {
+            fps: 24,
+            qrbox: (width, height) => {
+              // Standard wide box perfect for one-dimensional barcode capture
+              const boxWidth = Math.min(width * 0.9, 320);
+              const boxHeight = Math.min(height * 0.55, 150);
+              return { width: boxWidth, height: boxHeight };
+            },
+            aspectRatio: 1.7777778,
+            experimentalFeatures: {
+              useBarCodeDetectorIfSupported: true
+            }
+          } as any,
+          (decodedText) => {
+            handleScanSuccess(decodedText);
+          },
+          () => {
+            // Quietly ignore scan interval misses
+          }
+        );
+      } catch (err) {
+        console.error("Scanner start error:", err);
+        triggerToast("Gagal mengakses kamera. Pastikan izin kamera telah diberikan.", "error");
+        setIsScannerOpen(false);
+      }
+    }, 350);
+  };
+
+  // Stop Barcode Scanner camera connection
+  const stopScanner = async () => {
+    if (scannerRef.current) {
+      if (scannerRef.current.isScanning) {
+        try {
+          await scannerRef.current.stop();
+        } catch (e) {
+          console.error("Error stopping camera:", e);
+        }
+      }
+      scannerRef.current = null;
+    }
+  };
+
+  // Handle successful barcode/QR code scan
+  const handleScanSuccess = (decodedText: string) => {
+    const code = decodedText.trim();
+    if (!code) return;
+
+    // Cooldown mechanism to prevent multiple redundant scans within 1.5s
+    const now = Date.now();
+    const lastTime = scanCooldownRef.current[code] || 0;
+    if (now - lastTime < 1505) {
+      return; 
+    }
+    scanCooldownRef.current[code] = now;
+
+    if (scannerPurpose === 'productId') {
+      playBeep();
+      setProdFormId(code);
+      triggerToast(`Barcode Kode Barang terpindai: ${code}`, 'success');
+      setIsScannerOpen(false);
+      stopScanner();
+    } else if (scannerPurpose === 'posSearch') {
+      // Find matching product in catalog (case insensitive)
+      const found = productsRef.current.find(p => (p.id !== undefined && p.id !== null && String(p.id).toLowerCase() === code.toLowerCase()) || p.nama.toLowerCase() === code.toLowerCase());
+      if (found) {
+        playBeep();
+        addToCart(found);
+        setLastScannedItem(found.nama);
+        // Clean feedback overlay after 1.5s so user can scan next barcode
+        setTimeout(() => {
+          setLastScannedItem(null);
+        }, 1500);
+      } else {
+        triggerToast(`Kode barang "${code}" tidak terdaftar di katalog!`, 'warning');
+      }
+    }
+  };
+
+  // Ensure scanner camera is stopped if component unmounts
+  useEffect(() => {
+    return () => {
+      stopScanner();
+    };
+  }, []);
 
   // Custom IFrame-safe Dialog Modals for deletion and debug alert logging
   const [deleteConfirmProduct, setDeleteConfirmProduct] = useState<Product | null>(null);
+  const [showConfirmClearCart, setShowConfirmClearCart] = useState<boolean>(false);
+  const [showConfirmReset, setShowConfirmReset] = useState<boolean>(false);
   const [deleteDebugHeader, setDeleteDebugHeader] = useState<string>('');
   const [deleteDebugLog, setDeleteDebugLog] = useState<string | null>(null);
 
@@ -933,16 +1267,22 @@ export default function App() {
   // Form states for Settings page
   const [tempName, setTempName] = useState<string>('KASIR PINTAR');
   const [tempSlogan, setTempSlogan] = useState<string>('Sistem Kasir Fleksibel Multi-Fungsi');
-  const [tempAlamat, setTempAlamat] = useState<string>('🌐 santridev.github.io | 📞 0812-3456-7890');
+  const [tempAlamat, setTempAlamat] = useState<string>('🌐 santridev.github.io');
+  const [tempKontak, setTempKontak] = useState<string>('📞 0812-3456-7890');
   const [tempLogo, setTempLogo] = useState<string>('store.png');
+  const [tempGasUrl, setTempGasUrl] = useState<string>('');
+  const [tempSheetId, setTempSheetId] = useState<string>('');
 
   // Sync temp variables with saved states on first load or changes
   useEffect(() => {
     setTempName(storeNameState);
     setTempSlogan(storeSloganState);
     setTempAlamat(storeAlamatState);
+    setTempKontak(storeKontakState);
     setTempLogo(storeLogoState);
-  }, [storeNameState, storeSloganState, storeAlamatState, storeLogoState]);
+    setTempGasUrl(gasUrlState);
+    setTempSheetId(sheetIdState);
+  }, [storeNameState, storeSloganState, storeAlamatState, storeKontakState, storeLogoState, gasUrlState, sheetIdState]);
 
   useEffect(() => {
     try {
@@ -952,6 +1292,7 @@ export default function App() {
         if (config.namaToko) setStoreNameState(config.namaToko);
         if (config.sloganToko) setStoreSloganState(config.sloganToko);
         if (config.alamatToko) setStoreAlamatState(config.alamatToko);
+        if (config.kontakToko) setStoreKontakState(config.kontakToko);
         if (config.logoToko) setStoreLogoState(config.logoToko);
       }
     } catch (e) {
@@ -959,15 +1300,28 @@ export default function App() {
     }
   }, []);
 
-  const handleSaveStoreConfig = (name: string, slogan: string, alamat: string, logo: string) => {
+  const handleSaveStoreConfig = (name: string, slogan: string, alamat: string, kontak: string, logo: string, gasUrl: string, sheetId: string) => {
     try {
-      const config = { namaToko: name, sloganToko: slogan, alamatToko: alamat, logoToko: logo };
+      const config = { 
+        namaToko: name, 
+        sloganToko: slogan, 
+        alamatToko: alamat, 
+        kontakToko: kontak, 
+        logoToko: logo 
+      };
       localStorage.setItem('ts_sangkar_store_config', JSON.stringify(config));
+      localStorage.setItem('ts_sangkar_gas_url', gasUrl.trim());
+      localStorage.setItem('ts_sangkar_sheet_id', sheetId.trim());
+
       setStoreNameState(name);
       setStoreSloganState(slogan);
       setStoreAlamatState(alamat);
+      setStoreKontakState(kontak);
       setStoreLogoState(logo);
-      triggerToast('Pengaturan toko berhasil disimpan!', 'success');
+      setGasUrlState(gasUrl.trim());
+      setSheetIdState(sheetId.trim());
+
+      triggerToast('Pengaturan toko & database berhasil disimpan!', 'success');
     } catch (e) {
       triggerToast('Gagal menyimpan pengaturan', 'error');
     }
@@ -1042,7 +1396,7 @@ export default function App() {
     setReportsLoading(true);
     setReportsError('');
     try {
-      const spreadsheetId = '19981hn179EkrhmnlGCBPl5ZVhx84O1KMaglrq9RKVCI';
+      const spreadsheetId = sheetIdState || '19981hn179EkrhmnlGCBPl5ZVhx84O1KMaglrq9RKVCI';
       const range = "'Pesanan'!A1:Z10000";
       const apiKey = 'AIzaSyA8x0yI8zCPUgZktmGNvQVTzhm1fdZ0K74';
       const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?key=${apiKey}`;
@@ -1212,10 +1566,12 @@ export default function App() {
   // Calculation of sheet reports statistics
   const getReportsStats = () => {
     let totalSales = 0;
+    let totalModal = 0;
     const transactionCount = sheetRows.length;
     const paymentMethodsMap: Record<string, number> = {};
     const dateSalesMap: Record<string, number> = {};
-    const productSalesMap: Record<string, { name: string; count: number; revenue: number }> = {};
+    const dateModalMap: Record<string, number> = {};
+    const productSalesMap: Record<string, { name: string; count: number; revenue: number; modal: number; profit: number }> = {};
 
     sheetRows.forEach((row) => {
       const totalStr = getTotalVal(row);
@@ -1228,8 +1584,9 @@ export default function App() {
       const dateStr = getTanggal(row) || 'Unknown';
       dateSalesMap[dateStr] = (dateSalesMap[dateStr] || 0) + totalNum;
 
-      // Hubungkan data item / produk dari list JSON untuk menghitung yang terlaris
+      // Hubungkan data item / produk dari list JSON untuk menghitung yang terlaris dan modalnya
       const itemsRaw = getItems(row);
+      let rowModal = 0;
       if (itemsRaw) {
         try {
           const trimmed = itemsRaw.trim();
@@ -1241,11 +1598,24 @@ export default function App() {
                 if (pName) {
                   const q = Number(it.qty) || 1;
                   const h = Number(it.harga || it.price) || 0;
+                  
+                  // Look up cost price: from item JSON first, otherwise from current active catalog
+                  let singleCost = Number(it.hargaPokok) || 0;
+                  if (!singleCost) {
+                    const matchedP = products.find(prod => String(prod.nama).toLowerCase() === pName.toLowerCase());
+                    singleCost = matchedP && matchedP.hargaPokok ? matchedP.hargaPokok : 0;
+                  }
+                  
+                  const itemModal = singleCost * q;
+                  rowModal += itemModal;
+
                   if (!productSalesMap[pName]) {
-                    productSalesMap[pName] = { name: pName, count: 0, revenue: 0 };
+                    productSalesMap[pName] = { name: pName, count: 0, revenue: 0, modal: 0, profit: 0 };
                   }
                   productSalesMap[pName].count += q;
                   productSalesMap[pName].revenue += (h * q);
+                  productSalesMap[pName].modal += itemModal;
+                  productSalesMap[pName].profit += ((h - singleCost) * q);
                 }
               });
             }
@@ -1254,8 +1624,11 @@ export default function App() {
           // Gagal uraikan JSON, abaikan
         }
       }
+      totalModal += rowModal;
+      dateModalMap[dateStr] = (dateModalMap[dateStr] || 0) + rowModal;
     });
 
+    const totalProfit = totalSales - totalModal;
     const averageOrder = transactionCount > 0 ? Math.round(totalSales / transactionCount) : 0;
 
     const paymentStats = Object.keys(paymentMethodsMap).map((method) => ({
@@ -1267,17 +1640,27 @@ export default function App() {
       name,
       count: productSalesMap[name].count,
       revenue: productSalesMap[name].revenue,
+      modal: productSalesMap[name].modal,
+      profit: productSalesMap[name].profit,
     })).sort((a, b) => b.count - a.count).slice(0, 10);
 
-    const dailyTrends = Object.keys(dateSalesMap).map((date) => ({
-      date,
-      sales: dateSalesMap[date],
-    })).sort((a, b) => {
+    const dailyTrends = Object.keys(dateSalesMap).map((date) => {
+      const sales = dateSalesMap[date];
+      const modal = dateModalMap[date] || 0;
+      return {
+        date,
+        sales,
+        modal,
+        profit: sales - modal,
+      };
+    }).sort((a, b) => {
       return parseDateToComparable(b.date) - parseDateToComparable(a.date);
     }).slice(0, 10);
 
     return {
       totalSales,
+      totalModal,
+      totalProfit,
       transactionCount,
       averageOrder,
       paymentStats,
@@ -1298,9 +1681,9 @@ export default function App() {
   });
 
   return (
-    <div className="min-h-screen flex flex-col bg-panel-bg text-slate-800 font-sans selection:bg-accent/25 selection:text-slate-900">
+    <div className={`min-h-screen flex flex-col bg-panel-bg text-slate-800 font-sans selection:bg-accent/25 selection:text-slate-900 ${isDarkMode ? 'dark' : ''}`}>
       {/* HEADER SECTION */}
-      <header className="relative bg-gradient-to-br from-primary to-secondary text-white shadow-md sticky top-0 z-40 transition-all duration-300">
+      <header className="bg-gradient-to-br from-primary to-secondary text-white shadow-md sticky top-0 z-40 transition-all duration-300">
         <div className="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             {storeLogoState && storeLogoState !== 'ts.png' && storeLogoState.startsWith('data:') ? (
@@ -1324,39 +1707,28 @@ export default function App() {
             </div>
           </div>
 
-          {/* Mobile menu button */}
-          <div className="flex md:hidden items-center">
-            <button
-              onClick={() => setIsMobileMenuOpen(prev => !prev)}
-              className="inline-flex items-center justify-center p-2 rounded-full bg-white/15 text-white hover:bg-white/25 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-white/70"
-              aria-label="Buka menu"
-            >
-              {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-            </button>
-          </div>
-
-          {/* Navigation Tabs */}
-          <div className="hidden md:flex items-center gap-1 bg-white/10 p-1 rounded-full border border-white/5 backdrop-blur-xs text-[10px] md:text-xs">
+          {/* Navigation Tabs (Desktop only) */}
+          <div className="hidden md:flex items-center gap-1 bg-white/10 p-1 rounded-full border border-white/5 backdrop-blur-xs text-xs">
             <button
               onClick={() => setActiveTab('pos')}
-              className={`flex items-center gap-1 md:gap-1.5 px-2 md:px-3.5 py-1.5 rounded-full font-semibold transition-all duration-200 cursor-pointer ${
+              className={`flex items-center gap-1 md:gap-1.5 px-3.5 py-1.5 rounded-full font-semibold transition-all duration-200 cursor-pointer ${
                 activeTab === 'pos'
                   ? 'bg-accent text-white shadow-xs'
                   : 'text-slate-205 hover:text-white hover:bg-white/5'
               }`}
             >
-              <ShoppingCart className="w-3 h-3 md:w-3.5 md:h-3.5" />
+              <ShoppingCart className="w-3.5 h-3.5" />
               <span>Kasir</span>
             </button>
             <button
               onClick={() => setActiveTab('products')}
-              className={`flex items-center gap-1 md:gap-1.5 px-2 md:px-3.5 py-1.5 rounded-full font-semibold transition-all duration-200 cursor-pointer ${
+              className={`flex items-center gap-1 md:gap-1.5 px-3.5 py-1.5 rounded-full font-semibold transition-all duration-200 cursor-pointer ${
                 activeTab === 'products'
                   ? 'bg-accent text-white shadow-xs'
                   : 'text-slate-205 hover:text-white hover:bg-white/5'
               }`}
             >
-              <ShoppingBag className="w-3 h-3 md:w-3.5 md:h-3.5" />
+              <ShoppingBag className="w-3.5 h-3.5" />
               <span>Produk &amp; Stok</span>
             </button>
             <button
@@ -1364,24 +1736,24 @@ export default function App() {
                 setActiveTab('reports');
                 fetchGoogleSheetReports(); // Auto sync report data on click!
               }}
-              className={`flex items-center gap-1 md:gap-1.5 px-2 md:px-3.5 py-1.5 rounded-full font-semibold transition-all duration-200 cursor-pointer ${
+              className={`flex items-center gap-1 md:gap-1.5 px-3.5 py-1.5 rounded-full font-semibold transition-all duration-200 cursor-pointer ${
                 activeTab === 'reports'
                   ? 'bg-accent text-white shadow-xs'
                   : 'text-slate-205 hover:text-white hover:bg-white/5'
               }`}
             >
-              <BarChart3 className="w-3 h-3 md:w-3.5 md:h-3.5" />
+              <BarChart3 className="w-3.5 h-3.5" />
               <span>Laporan</span>
             </button>
             <button
               onClick={() => setActiveTab('settings')}
-              className={`flex items-center gap-1 md:gap-1.5 px-2 md:px-3.5 py-1.5 rounded-full font-semibold transition-all duration-200 cursor-pointer ${
+              className={`flex items-center gap-1 md:gap-1.5 px-3.5 py-1.5 rounded-full font-semibold transition-all duration-200 cursor-pointer ${
                 activeTab === 'settings'
                   ? 'bg-accent text-white shadow-xs'
                   : 'text-slate-205 hover:text-white hover:bg-white/5'
               }`}
             >
-              <Settings className="w-3 h-3 md:w-3.5 md:h-3.5" />
+              <Settings className="w-3.5 h-3.5" />
               <span>Pengaturan</span>
             </button>
           </div>
@@ -1396,42 +1768,136 @@ export default function App() {
               <span>{currentDate || 'Tanggal'}</span>
             </div>
           </div>
-        </div>
 
-        {/* Mobile dropdown menu */}
-        <div className={`md:hidden bg-white/95 backdrop-blur-xl border-t border-slate-200 shadow-sm transition-all duration-200 overflow-hidden ${isMobileMenuOpen ? 'max-h-[320px] opacity-100' : 'max-h-0 opacity-0'}`}>
-          <div className="px-4 py-3 space-y-2">
+          {/* Mobile Hamburger Burger Button */}
+          <div className="md:hidden flex items-center">
             <button
-              onClick={() => { setActiveTab('pos'); setIsMobileMenuOpen(false); }}
-              className={`w-full text-left flex items-center gap-2 px-3 py-2 rounded-xl transition-colors duration-200 ${activeTab === 'pos' ? 'bg-accent text-white' : 'text-slate-700 hover:bg-slate-100'}`}
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              className="p-2 mr-1 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 transition-all text-white cursor-pointer flex items-center justify-center border border-white/5"
+              title="Menu Navigasi"
             >
-              <ShoppingCart className="w-4 h-4" />
-              Kasir
-            </button>
-            <button
-              onClick={() => { setActiveTab('products'); setIsMobileMenuOpen(false); }}
-              className={`w-full text-left flex items-center gap-2 px-3 py-2 rounded-xl transition-colors duration-200 ${activeTab === 'products' ? 'bg-accent text-white' : 'text-slate-700 hover:bg-slate-100'}`}
-            >
-              <ShoppingBag className="w-4 h-4" />
-              Produk & Stok
-            </button>
-            <button
-              onClick={() => { setActiveTab('reports'); setIsMobileMenuOpen(false); fetchGoogleSheetReports(); }}
-              className={`w-full text-left flex items-center gap-2 px-3 py-2 rounded-xl transition-colors duration-200 ${activeTab === 'reports' ? 'bg-accent text-white' : 'text-slate-700 hover:bg-slate-100'}`}
-            >
-              <BarChart3 className="w-4 h-4" />
-              Laporan
-            </button>
-            <button
-              onClick={() => { setActiveTab('settings'); setIsMobileMenuOpen(false); }}
-              className={`w-full text-left flex items-center gap-2 px-3 py-2 rounded-xl transition-colors duration-200 ${activeTab === 'settings' ? 'bg-accent text-white' : 'text-slate-700 hover:bg-slate-100'}`}
-            >
-              <Settings className="w-4 h-4" />
-              Pengaturan
+              {isMobileMenuOpen ? <X className="w-5 h-5 text-accent-light" /> : <Menu className="w-5 h-5" />}
             </button>
           </div>
         </div>
       </header>
+
+      {/* MOBILE NAV DROPDOWN PANEL */}
+      {isMobileMenuOpen && (
+        <div className="md:hidden bg-slate-900 border-b border-slate-800 text-white shadow-xl sticky top-[64px] z-50 select-none animate-fadeIn">
+          <div className="p-3 space-y-1 bg-slate-900/95 backdrop-blur-md">
+            <button
+              onClick={() => {
+                setActiveTab('pos');
+                setIsMobileMenuOpen(false);
+              }}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-semibold text-xs transition-all duration-150 ${
+                activeTab === 'pos'
+                  ? 'bg-accent text-white shadow-md'
+                  : 'text-slate-300 hover:bg-slate-805 hover:text-white'
+              }`}
+            >
+              <ShoppingCart className="w-4 h-4 text-accent-light" />
+              <span>Kasir (POS)</span>
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab('products');
+                setIsMobileMenuOpen(false);
+              }}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-semibold text-xs transition-all duration-150 ${
+                activeTab === 'products'
+                  ? 'bg-accent text-white shadow-md'
+                  : 'text-slate-300 hover:bg-slate-805 hover:text-white'
+              }`}
+            >
+              <ShoppingBag className="w-4 h-4 text-accent-light" />
+              <span>Produk &amp; Stok</span>
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab('reports');
+                fetchGoogleSheetReports();
+                setIsMobileMenuOpen(false);
+              }}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-semibold text-xs transition-all duration-150 ${
+                activeTab === 'reports'
+                  ? 'bg-accent text-white shadow-md'
+                  : 'text-slate-300 hover:bg-slate-805 hover:text-white'
+              }`}
+            >
+              <BarChart3 className="w-4 h-4 text-accent-light" />
+              <span>Laporan Transaksi</span>
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab('settings');
+                setIsMobileMenuOpen(false);
+              }}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-semibold text-xs transition-all duration-150 ${
+                activeTab === 'settings'
+                  ? 'bg-accent text-white shadow-md'
+                  : 'text-slate-300 hover:bg-slate-805 hover:text-white'
+              }`}
+            >
+              <Settings className="w-4 h-4 text-accent-light" />
+              <span>Pengaturan Toko</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showInstallBanner && (
+        <div className="max-w-7xl w-full mx-auto px-4 md:px-6 pt-4 animate-fadeIn">
+          <div className="bg-gradient-to-r from-primary to-secondary text-white rounded-2xl p-5 border border-white/10 shadow-lg relative overflow-hidden flex flex-col md:flex-row items-center justify-between gap-5">
+            {/* Ambient glows */}
+            <div className="absolute top-0 right-0 w-64 h-64 bg-accent/15 rounded-full filter blur-3xl pointer-events-none -mr-20 -mt-20"></div>
+            <div className="absolute bottom-0 left-0 w-48 h-48 bg-sky-500/10 rounded-full filter blur-2xl pointer-events-none -ml-16 -mb-16"></div>
+
+            <div className="flex items-center gap-4.5 z-10">
+              <div className="flex-shrink-0 w-14 h-14 bg-white/10 rounded-xl p-1 backdrop-blur-md border border-white/20 flex items-center justify-center shadow-md">
+                <img
+                  src="./logo_rizquna.png"
+                  alt="Rizquna Logo"
+                  className="w-12 h-12 rounded-lg object-cover"
+                  onError={(e) => {
+                    // Fallback to stylized text if it fails
+                    (e.target as HTMLElement).style.display = 'none';
+                  }}
+                />
+              </div>
+              <div>
+                <h3 className="font-display font-bold text-base md:text-lg tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white via-accent-light to-accent">
+                  Instal Aplikasi Rizquna - Kasir Pintar
+                </h3>
+                <p className="text-xs text-slate-205 mt-1 max-w-2xl leading-relaxed">
+                  Akses instan langsung dari layar utama HP atau komputer Anda. Aplikasi berjalan lebih cepat, aman, dan mendukung pengerjaan transaksi secara offline.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 w-full md:w-auto z-10 justify-end">
+              <button
+                type="button"
+                onClick={handleInstallPWA}
+                className="w-full md:w-auto px-5 py-2.5 bg-accent hover:bg-accent-hover text-slate-950 text-xs font-bold rounded-xl transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Download className="w-4 h-4" />
+                <span>Instal Aplikasi</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleDismissInstallBanner}
+                className="px-3.5 py-2.5 bg-white/10 hover:bg-white/15 text-white text-xs font-semibold rounded-xl transition-all border border-white/5 flex items-center justify-center gap-1.5 cursor-pointer"
+                title="Sembunyikan pesan ini"
+              >
+                <X className="w-4 h-4" />
+                <span className="md:hidden">Sembunyikan</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* CORE FRAME CONTAINER */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 overflow-hidden">
@@ -1452,23 +1918,33 @@ export default function App() {
             </div>
 
             {/* SEARCHING */}
-            <div className="relative">
+            <div className="relative flex items-center">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <input
                 type="text"
-                placeholder="Cari nama, ukuran, atau kategori..."
+                placeholder="Cari nama, kode/ID, atau ukuran..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full py-2 pl-10 pr-4 bg-slate-50 border border-slate-200 rounded-full text-sm transition-all focus:outline-none focus:border-accent focus:bg-white focus:ring-2 focus:ring-accent/15 placeholder:text-slate-400 text-slate-700"
+                className="w-full py-2.5 pl-10 pr-18 bg-slate-50 border border-slate-200 rounded-full text-xs transition-all focus:outline-none focus:border-accent focus:bg-white focus:ring-2 focus:ring-accent/15 placeholder:text-slate-400 text-slate-700 font-medium"
               />
-              {searchQuery && (
+              <div className="absolute right-2 flex items-center gap-0.5">
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-200/50 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
                 <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full hover:bg-slate-200/50"
+                  type="button"
+                  onClick={() => startScanner('posSearch')}
+                  title="Scan Barcode Kode Barang"
+                  className="p-1.5 text-primary hover:text-secondary hover:bg-primary/10 rounded-full transition-all cursor-pointer flex items-center justify-center"
                 >
-                  <X className="w-3.5 h-3.5" />
+                  <Camera className="w-4 h-4" />
                 </button>
-              )}
+              </div>
             </div>
 
             {/* CATEGORY SELECTOR CHIPS */}
@@ -1492,9 +1968,20 @@ export default function App() {
           {/* DYNAMIC PRODUCTS GRID (with scroll boundaries) */}
           <div className="flex-1 overflow-y-auto p-4 md:p-5 bg-slate-50/50">
             {loading ? (
-              <div className="h-48 flex flex-col items-center justify-center text-slate-400 text-sm gap-2">
-                <div className="w-8 h-8 border-4 border-accent border-t-transparent rounded-full animate-spin" />
-                <span>Memuat database cloud...</span>
+              <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-2 xl:grid-cols-2 gap-3.5 animate-pulse">
+                {[1, 2, 3, 4, 5, 6].map((i) => (
+                  <div key={i} className="bg-white rounded-xl border border-slate-100 p-3 flex flex-col gap-3">
+                    <div className="relative aspect-square w-full rounded-lg bg-slate-100" />
+                    <div className="space-y-2">
+                      <div className="h-3.5 bg-slate-150 rounded-sm w-3/4" />
+                      <div className="h-2.5 bg-slate-100 rounded-sm w-1/2" />
+                      <div className="flex justify-between items-center pt-2">
+                        <div className="h-4 bg-slate-150 rounded-sm w-5/12" />
+                        <div className="h-6 bg-slate-100 rounded-lg w-5/12" />
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : filteredProducts.length === 0 ? (
               <div className="h-48 flex flex-col items-center justify-center text-slate-400 text-sm p-4 text-center">
@@ -1524,7 +2011,7 @@ export default function App() {
                         {p.stok !== undefined ? (p.stok <= 0 ? 'HABIS' : `Stok: ${p.stok}`) : 'Stok: 99+'}
                       </span>
                       <img
-                        src={p.foto}
+                        src={p.foto || 'https://images.unsplash.com/photo-1626331307374-ba220ae10793?auto=format&fit=crop&q=80&w=300'}
                         alt={p.nama}
                         loading="lazy"
                         referrerPolicy="no-referrer"
@@ -1540,6 +2027,11 @@ export default function App() {
                       <h4 className="font-bold text-slate-800 text-xs md:text-sm group-hover:text-accent transition-colors leading-tight line-clamp-2">
                         {p.nama}
                       </h4>
+                      {p.id && (
+                        <span className="text-[9px] font-mono text-slate-400 bg-slate-105 px-1 py-0.5 rounded self-start mt-1">
+                          Kode: {p.id}
+                        </span>
+                      )}
                       <span className="text-[10px] text-slate-400 font-medium mt-1 inline-flex items-center gap-1 select-none">
                         📐 Ukuran: {p.ukuran}
                       </span>
@@ -1644,7 +2136,7 @@ export default function App() {
                   {/* USER NOTE INSERTION */}
                   <input
                     type="text"
-                    placeholder="📝 Catatan item (opsional)"
+                    placeholder="Tambah catatan untuk item ini... (opsional)"
                     value={item.note}
                     onChange={(e) => {
                       const updated = [...cart];
@@ -1670,7 +2162,7 @@ export default function App() {
           <div className="space-y-3.5">
             <div>
               <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1 select-none">
-                <User className="w-3 h-3 text-slate-400" /> Nama Pelanggan
+                <User className="w-3 h-3 text-slate-400" /> Nama Pelanggan <span className="text-rose-500 font-bold ml-0.5 animate-pulse">*</span>
               </label>
               <input
                 type="text"
@@ -1724,8 +2216,8 @@ export default function App() {
             {/* ADDTIONAL BILLING */}
             <div className="grid grid-cols-3 gap-2 pt-1">
               <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block select-none">
-                  📦 Ongkir
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1 select-none">
+                  <Truck className="w-3 h-3 text-slate-400" /> Ongkir
                 </label>
                 <input
                   type="number"
@@ -1736,8 +2228,8 @@ export default function App() {
                 />
               </div>
               <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block select-none">
-                  ➕ Tambahan
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1 select-none">
+                  <Plus className="w-3 h-3 text-slate-400" /> Tambahan
                 </label>
                 <input
                   type="number"
@@ -1748,8 +2240,8 @@ export default function App() {
                 />
               </div>
               <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block select-none">
-                  🏷️ Diskon (%)
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1 select-none">
+                  <Percent className="w-3 h-3 text-slate-400" /> Diskon (%)
                 </label>
                 <input
                   type="number"
@@ -1779,8 +2271,8 @@ export default function App() {
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3 items-center">
               <div>
-                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 block select-none">
-                  💳 Metode Bayar
+                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1 select-none">
+                  <CreditCard className="w-3 h-3 text-slate-400" /> Metode Bayar
                 </label>
                 <select
                   value={metode}
@@ -1791,20 +2283,20 @@ export default function App() {
                   }}
                   className="text-xs w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-accent focus:bg-white transition-all text-slate-700 font-sans"
                 >
-                  <option value="Tunai">💵 Tunai</option>
-                  <option value="Transfer">📱 Transfer</option>
-                  <option value="QRIS">📲 QRIS</option>
-                  <option value="Kartu Debit">💳 Kartu Debit</option>
-                  <option value="Kartu Kredit">💎 Kartu Kredit</option>
-                  <option value="DP">🏷️ DP (Uang Muka)</option>
-                  <option value="Belum Dibayar">⏳ Belum Dibayar</option>
+                  <option value="Tunai">Tunai</option>
+                  <option value="Transfer">Transfer</option>
+                  <option value="QRIS">QRIS (Digital)</option>
+                  <option value="Kartu Debit">Kartu Debit</option>
+                  <option value="Kartu Kredit">Kartu Kredit</option>
+                  <option value="DP">DP (Uang Muka)</option>
+                  <option value="Belum Dibayar">Belum Dibayar</option>
                 </select>
               </div>
 
               {metode !== 'Belum Dibayar' && (
                 <div>
-                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 block select-none">
-                    {metode === 'DP' ? '💵 Jumlah DP Diterima' : '💵 Uang Diterima'}
+                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1 select-none">
+                    <Coins className="w-3 h-3 text-slate-400" /> {metode === 'DP' ? 'Jumlah DP Diterima' : 'Uang Diterima'} <span className="text-rose-500 font-bold ml-0.5 animate-pulse">*</span>
                   </label>
                   <input
                     type="number"
@@ -1924,10 +2416,12 @@ export default function App() {
                 <button
                   onClick={() => {
                     setEditingProduct(null);
+                    setProdFormId('');
                     setProdFormNama('');
                     setProdFormUkuran('');
                     setProdFormKategori('Umum');
                     setProdFormHarga(0);
+                    setProdFormHargaPokok(0);
                     setProdFormFoto('');
                     setProdFormStok(100);
                     setShowProductForm(true);
@@ -1945,7 +2439,7 @@ export default function App() {
               <div className="bg-slate-50 rounded-2xl border-2 border-primary/20 p-5 shadow-xs animate-fadeIn space-y-4">
                 <div className="flex justify-between items-center pb-2 border-b">
                   <h4 className="font-display font-semibold text-slate-950 text-sm flex items-center gap-1.5">
-                    {editingProduct ? '📝 Edit Data Produk' : '✨ Tambah Katalog Produk'}
+                    {editingProduct ? 'Edit Data Produk' : 'Tambah Katalog Produk'}
                   </h4>
                   <button 
                     onClick={() => {
@@ -1959,6 +2453,31 @@ export default function App() {
                 </div>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                  {/* Kode Barang (ID) */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-550 uppercase tracking-wider block flex justify-between items-center">
+                      <span>Kode Barang / ID</span>
+                      <span className="text-[9px] text-slate-400 font-normal">Kosongkan untuk otomatis</span>
+                    </label>
+                    <div className="relative flex items-center">
+                      <input
+                        type="text"
+                        placeholder="Contoh: PRD-A89B, 8923180..."
+                        value={prodFormId}
+                        onChange={(e) => setProdFormId(e.target.value)}
+                        className="w-full text-xs p-2.5 pr-10 bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-accent font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => startScanner('productId')}
+                        title="Scan Barcode dengan Kamera"
+                        className="absolute right-2 flex items-center justify-center p-1.5 text-slate-400 hover:text-primary hover:bg-slate-100 rounded-lg transition-all cursor-pointer"
+                      >
+                        <Camera className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+
                   {/* Nama */}
                   <div className="space-y-1">
                     <label className="text-[10px] font-bold text-slate-550 uppercase tracking-wider block">Nama Produk</label>
@@ -2000,6 +2519,17 @@ export default function App() {
                         <option key={i} value={cat} />
                       ))}
                     </datalist>
+                  </div>
+                  {/* Harga Pokok */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-550 uppercase tracking-wider block">Harga Pokok / Modal (Rp)</label>
+                    <input
+                      type="number"
+                      placeholder="Contoh: 75000"
+                      value={prodFormHargaPokok || ''}
+                      onChange={(e) => setProdFormHargaPokok(Number(e.target.value))}
+                      className="w-full text-xs p-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-accent"
+                    />
                   </div>
                   {/* Harga */}
                   <div className="space-y-1">
@@ -2059,6 +2589,7 @@ export default function App() {
                         ukuran: ukuranVal,
                         kategori: String(prodFormKategori || ''),
                         harga: Number(prodFormHarga),
+                        hargaPokok: Number(prodFormHargaPokok),
                         foto: prodFormFoto || 'https://images.unsplash.com/photo-1582139329536-e7284fece509?q=80&w=300',
                         stok: Number(prodFormStok),
                       };
@@ -2067,10 +2598,14 @@ export default function App() {
                       if (editingProduct) {
                         success = await editProductInSheet({
                           ...editingProduct,
+                          id: prodFormId.trim() || editingProduct.id,
                           ...payload
                         });
                       } else {
-                        success = await addProductToSheet(payload);
+                        success = await addProductToSheet({
+                          id: prodFormId.trim() || undefined,
+                          ...payload
+                        });
                       }
 
                       if (success) {
@@ -2090,7 +2625,7 @@ export default function App() {
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
               <div className="p-4 bg-slate-50/50 border-b flex justify-between items-center">
                 <span className="font-semibold text-slate-800 text-xs">Total Data Katalog: {products.length} Items</span>
-                {(!SHEET_API_URL || SHEET_API_URL.trim() === '' || SHEET_API_URL.includes('PASTE_YOUR_URL')) && (
+                {(!gasUrlState || gasUrlState.trim() === '' || gasUrlState.includes('PASTE_YOUR_URL')) && (
                   <span className="text-[10px] bg-amber-50 text-amber-700 border border-amber-100 font-bold px-2 py-0.5 rounded-full uppercase">
                     Model Offline / Lokal
                   </span>
@@ -2106,6 +2641,7 @@ export default function App() {
                       <th className="p-3">Kategori</th>
                       <th className="p-3">Ukuran</th>
                       <th className="p-3 text-right">Harga Jual</th>
+                      <th className="p-3 text-right">Harga Pokok (Modal)</th>
                       <th className="p-3 text-center">Stok Fisik</th>
                       <th className="p-3 text-center">Aksi Operasi</th>
                     </tr>
@@ -2113,7 +2649,7 @@ export default function App() {
                   <tbody>
                     {products.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="p-8 text-center text-slate-400">
+                        <td colSpan={8} className="p-8 text-center text-slate-400">
                           Tidak ada produk di sini. Daftarkan produk baru atau beralih ke Mode Excel.
                         </td>
                       </tr>
@@ -2122,7 +2658,7 @@ export default function App() {
                         <tr key={index} className="hover:bg-slate-50/80 border-b text-slate-700">
                           <td className="p-3 text-center">
                             <img
-                              src={p.foto}
+                              src={p.foto || 'https://images.unsplash.com/photo-1582139329536-e7284fece509?q=80&w=300'}
                               alt={p.nama}
                               className="w-9 h-9 object-cover rounded-lg border inline bg-slate-50"
                               onError={(e) => {
@@ -2130,15 +2666,25 @@ export default function App() {
                               }}
                             />
                           </td>
-                          <td className="p-3 font-semibold text-slate-900">{p.nama}</td>
+                          <td className="p-3 font-semibold text-slate-900">
+                            <div>{p.nama}</div>
+                            {p.id && (
+                              <p className="text-[10px] text-slate-400 font-mono font-medium mt-0.5 select-all">
+                                ID: {p.id}
+                              </p>
+                            )}
+                          </td>
                           <td className="p-3">
                             <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border text-[10px] font-sans font-medium">
                               {p.kategori}
                             </span>
                           </td>
                           <td className="p-3 font-mono font-bold text-slate-500">{p.ukuran}</td>
-                          <td className="p-3 text-right font-bold text-emerald-600 font-mono">
+                          <td className="p-3 text-right font-bold text-emerald-500 font-mono">
                             Rp {p.harga.toLocaleString('id-ID')}
+                          </td>
+                          <td className="p-3 text-right font-medium text-slate-550 font-mono">
+                            Rp {(p.hargaPokok || 0).toLocaleString('id-ID')}
                           </td>
                           <td className="p-3 text-center font-bold">
                             <span className={`px-2.5 py-1 rounded-md text-[11px] font-mono leading-none inline-block ${
@@ -2155,10 +2701,12 @@ export default function App() {
                             <button
                               onClick={() => {
                                 setEditingProduct(p);
+                                setProdFormId(p.id !== undefined && p.id !== null ? String(p.id) : '');
                                 setProdFormNama(p.nama !== undefined && p.nama !== null ? String(p.nama) : '');
                                 setProdFormUkuran(p.ukuran !== undefined && p.ukuran !== null ? String(p.ukuran) : '');
                                 setProdFormKategori(p.kategori !== undefined && p.kategori !== null ? String(p.kategori) : 'Umum');
                                 setProdFormHarga(p.harga !== undefined && p.harga !== null ? Number(p.harga) : 0);
+                                setProdFormHargaPokok(p.hargaPokok !== undefined && p.hargaPokok !== null ? Number(p.hargaPokok) : 0);
                                 setProdFormFoto(p.foto !== undefined && p.foto !== null ? String(p.foto) : '');
                                 setProdFormStok(p.stok !== undefined && p.stok !== null ? Number(p.stok) : 100);
                                 setShowProductForm(true);
@@ -2228,46 +2776,80 @@ export default function App() {
             ) : (
               <>
                 {/* METRICS Bento Grid Block */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
                   {/* Total Sales (Omset) */}
-                  <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-3xs flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-650 flex items-center justify-center text-xl shadow-xs">💵</div>
+                  <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-3xs flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center shadow-xs flex-shrink-0">
+                      <Banknote className="w-5 h-5 text-emerald-600" />
+                    </div>
                     <div>
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block select-none">Omset Penjualan</span>
-                      <span className="text-base font-black font-display text-slate-900">
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block select-none">Omset Jual</span>
+                      <span className="text-sm font-black font-display text-slate-900 leading-tight block">
                         Rp {stats.totalSales.toLocaleString('id-ID')}
                       </span>
                     </div>
                   </div>
 
-                  {/* Transaction Counts */}
-                  <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-3xs flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-650 flex items-center justify-center text-xl shadow-xs">📦</div>
+                  {/* Total Modal (Capital) */}
+                  <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-3xs flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center shadow-xs flex-shrink-0">
+                      <Briefcase className="w-5 h-5 text-slate-500" />
+                    </div>
                     <div>
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block select-none">Total Transaksi</span>
-                      <span className="text-lg font-black font-display text-slate-900">
-                        {stats.transactionCount} Transaksi
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block select-none">Total Modal</span>
+                      <span className="text-sm font-black font-display text-slate-900 leading-tight block">
+                        Rp {stats.totalModal.toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Keuntungan Bersih (Profit) */}
+                  <div className="bg-gradient-to-br from-emerald-500 to-teal-650 rounded-2xl p-4 shadow-3xs flex items-center gap-3 text-white border border-emerald-600">
+                    <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shadow-xs flex-shrink-0">
+                      <Coins className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <span className="text-[9px] font-bold text-white/85 uppercase tracking-widest block select-none">Untung Bersih</span>
+                      <span className="text-sm font-black font-display text-white leading-tight block">
+                        Rp {stats.totalProfit.toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Transaction Counts */}
+                  <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-3xs flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center shadow-xs flex-shrink-0">
+                      <Package className="w-5 h-5 text-indigo-600" />
+                    </div>
+                    <div>
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block select-none">Transaksi</span>
+                      <span className="text-sm font-black font-display text-slate-900 leading-tight block">
+                        {stats.transactionCount} Trans
                       </span>
                     </div>
                   </div>
 
                   {/* Avg Order Values */}
-                  <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-3xs flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-650 flex items-center justify-center text-xl shadow-xs">📈</div>
+                  <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-3xs flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center shadow-xs flex-shrink-0">
+                      <TrendingUp className="w-5 h-5 text-amber-650" />
+                    </div>
                     <div>
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block select-none">Rata-Rata Nota</span>
-                      <span className="text-base font-black font-display text-slate-900">
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block select-none">Rerata Nota</span>
+                      <span className="text-sm font-black font-display text-slate-900 leading-tight block">
                         Rp {stats.averageOrder.toLocaleString('id-ID')}
                       </span>
                     </div>
                   </div>
 
                   {/* Produk Terlaris Stats Card */}
-                  <div className="bg-white rounded-2xl border border-slate-205 p-5 shadow-3xs flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-purple-50 text-purple-650 flex items-center justify-center text-xl shadow-xs">🏆</div>
-                    <div>
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block select-none">Produk Terlaris</span>
-                      <span className="text-sm font-black font-display text-slate-900 truncate max-w-[125px] block" title={stats.productStats[0]?.name}>
+                  <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-3xs flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center shadow-xs flex-shrink-0">
+                      <Award className="w-5 h-5 text-purple-600" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block select-none">Bestseller</span>
+                      <span className="text-xs font-black font-display text-slate-900 truncate block" title={stats.productStats[0]?.name}>
                         {stats.productStats[0]?.name || '-'}
                       </span>
                     </div>
@@ -2285,12 +2867,49 @@ export default function App() {
                       </span>
                       {chartHoverIdx !== null && stats.dailyTrends.length > 0 && (
                         <span className="text-[10px] font-semibold bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full border border-emerald-150 animate-fadeIn">
-                          { [...stats.dailyTrends].reverse()[chartHoverIdx]?.date }: <b>Rp { [...stats.dailyTrends].reverse()[chartHoverIdx]?.sales.toLocaleString('id-ID') }</b>
+                          { [...stats.dailyTrends].reverse()[chartHoverIdx]?.date }: <b>Omset Rp { (([...stats.dailyTrends].reverse()[chartHoverIdx]?.sales) || 0).toLocaleString('id-ID') } | Untung Rp { (([...stats.dailyTrends].reverse()[chartHoverIdx]?.profit) || 0).toLocaleString('id-ID') }</b>
                         </span>
                       )}
                     </h4>
-                    {stats.dailyTrends.length === 0 ? (
-                      <div className="h-56 flex items-center justify-center text-xs text-slate-400">Tidak ada data tren</div>
+                    {reportsLoading || stats.dailyTrends.length === 0 ? (
+                      <div className="pt-2 relative animate-pulse">
+                        <div className="w-full h-56 relative flex items-center justify-center">
+                          <div className="absolute inset-0 flex flex-col justify-between py-4 pr-2">
+                            {[1, 2, 3, 4, 5].map((i) => (
+                              <div key={i} className="flex items-center gap-2 w-full">
+                                <div className="h-2 w-10 bg-slate-50 rounded"></div>
+                                <div className="h-[1px] bg-slate-100 flex-1 border-dashed border-b"></div>
+                              </div>
+                            ))}
+                          </div>
+                          
+                          <svg viewBox="0 0 500 220" className="w-full h-full opacity-60 relative z-10 select-none">
+                            <defs>
+                              <linearGradient id="skeletonGradient" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#10b981" stopOpacity="0.15" />
+                                <stop offset="100%" stopColor="#10b981" stopOpacity="0.0" />
+                              </linearGradient>
+                            </defs>
+                            <path 
+                              d="M 60 160 Q 150 110 250 140 T 440 100" 
+                              fill="url(#skeletonGradient)" 
+                              stroke="#cbd5e1" 
+                              strokeWidth="3" 
+                              strokeLinecap="round" 
+                              className="transition-all duration-1000"
+                            />
+                            <circle cx="250" cy="140" r="7" className="fill-emerald-400/25 animate-ping" />
+                            <circle cx="250" cy="140" r="4.5" className="fill-emerald-500" />
+                          </svg>
+
+                          <div className="absolute inset-0 flex flex-col items-center justify-center z-20 bg-white/30 gap-2 backdrop-blur-[0.5px]">
+                            <TrendingUp className="w-8 h-8 text-emerald-500/50 animate-bounce" />
+                            <span className="text-xs font-semibold text-slate-400 bg-slate-50 shadow-xs px-3.5 py-1.5 rounded-full border border-slate-150">
+                              {reportsLoading ? 'Mengunduh & Memetakan Tren Harian...' : 'Belum Ada Data Tren Penjualan'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
                     ) : (
                       <div className="pt-2 relative">
                         {/* Interactive Responsive SVG Line Chart */}
@@ -2464,8 +3083,20 @@ export default function App() {
                       <ShoppingBag className="w-4 h-4 text-primary" />
                       Produk Terlaris & Populer
                     </h4>
-                    {stats.productStats.length === 0 ? (
-                      <div className="h-56 flex items-center justify-center text-xs text-slate-400">Tidak ada data produk terjual</div>
+                    {reportsLoading || stats.productStats.length === 0 ? (
+                      <div className="h-56 flex flex-col justify-center space-y-4 pt-2 animate-pulse">
+                        {[1, 2, 3, 4].map((i) => (
+                          <div key={i} className="space-y-1.5">
+                            <div className="flex justify-between">
+                              <div className="h-3 w-32 bg-slate-100 rounded"></div>
+                              <div className="h-3 w-10 bg-slate-100 rounded"></div>
+                            </div>
+                            <div className="h-2 bg-slate-50 rounded-full overflow-hidden">
+                              <div className="bg-slate-200 h-full rounded-full" style={{ width: i === 1 ? '70%' : i === 2 ? '45%' : i === 3 ? '30%' : '15%' }}></div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     ) : (
                       <div className="space-y-4 pt-1 max-h-[250px] overflow-y-auto pr-1">
                         {stats.productStats.map((item, index) => {
@@ -2479,7 +3110,7 @@ export default function App() {
                                   <span className="text-slate-800 font-bold truncate max-w-[190px]" title={item.name}>{item.name}</span>
                                 </div>
                                 <span className="text-primary font-black flex-shrink-0 text-right">
-                                  {item.count} pcs <span className="text-slate-400 text-[10px] font-medium ml-1.5">(Rp {item.revenue.toLocaleString('id-ID')})</span>
+                                  {item.count} pcs <span className="text-slate-400 text-[10px] font-medium ml-1.5">(Omset Rp {item.revenue.toLocaleString('id-ID')} | Untung Rp {(item.profit || 0).toLocaleString('id-ID')})</span>
                                 </span>
                               </div>
                               <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
@@ -2578,100 +3209,336 @@ export default function App() {
               <div className="border-b border-slate-100 pb-4">
                 <h3 className="font-display font-bold text-slate-900 tracking-tight text-lg flex items-center gap-2">
                   <Settings className="w-5 h-5 text-primary" />
-                  Pengaturan Kustomisasi Toko
+                  Kustomisasi Toko & Database Backend
                 </h3>
-                <p className="text-xs text-slate-505 mt-1">
-                  Atur informasi identitas toko Anda. Data ini akan ditampilkan pada Nota Pembayaran / Cetakan.
+                <p className="text-xs text-slate-500 mt-1">
+                  Atur identitas fisik toko Anda dan konfigurasikan endpoint cloud Google Apps Script / Google Sheets Anda secara dinamis tanpa mengubah baris kode program secara manual.
                 </p>
               </div>
 
-              <div className="space-y-4">
-                {/* Logo Toko */}
-                <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-2 font-sans select-none">Logo Toko</label>
-                  <div className="flex items-center gap-4">
-                    {tempLogo && tempLogo !== 'ts.png' ? (
-                      <img src={tempLogo} alt="Logo" className="w-16 h-16 rounded-full object-cover border-2 border-accent shadow-xs bg-slate-50" />
-                    ) : (
-                      <div className="w-16 h-16 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center font-bold text-xl border font-sans select-none shadow-3xs">{tempName.substring(0, 2).toUpperCase()}</div>
-                    )}
-                    <div className="flex-1">
-                      <input 
-                        type="file" 
-                        accept="image/*"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) {
-                            const reader = new FileReader();
-                            reader.onloadend = () => {
-                              setTempLogo(reader.result as string);
-                            };
-                            reader.readAsDataURL(file);
-                          }
-                        }}
-                        className="text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-accent/10 file:text-accent hover:file:bg-accent/20 cursor-pointer"
-                      />
-                      <p className="text-[10px] text-slate-400 mt-1">Format gambar JPG, PNG. Maksimal 1MB.</p>
+              <div className="space-y-5">
+                {/* --- SEKSI 1: IDENTITAS VISUAL --- */}
+                <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-100 space-y-4">
+                  <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">1. Profil Toko</h4>
+                  
+                  {/* Logo Toko */}
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 block mb-2 font-sans select-none">Logo Toko</label>
+                    <div className="flex items-center gap-4">
+                      {tempLogo && tempLogo !== 'store.png' ? (
+                        <img src={tempLogo} alt="Logo" className="w-16 h-16 rounded-full object-cover border border-slate-200 shadow-sm bg-white" />
+                      ) : (
+                        <div className="w-16 h-16 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-xl border border-slate-200 font-sans select-none shadow-sm">{tempName.substring(0, 2).toUpperCase()}</div>
+                      )}
+                      <div className="flex-1">
+                        <input 
+                          type="file" 
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onloadend = () => {
+                                setTempLogo(reader.result as string);
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                          className="text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-[11px] file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 cursor-pointer"
+                        />
+                        <p className="text-[10px] text-slate-400 mt-1">Format gambar JPG, PNG. Maksimal 1MB.</p>
+                      </div>
                     </div>
+                  </div>
+
+                  {/* Nama Toko */}
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 block mb-1">Nama Toko</label>
+                    <input
+                      type="text"
+                      value={tempName}
+                      onChange={(e) => setTempName(e.target.value)}
+                      className="w-full text-xs p-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-accent text-slate-800 font-bold uppercase transition-all"
+                      placeholder="Contoh: KASIR PINTAR"
+                    />
+                  </div>
+
+                  {/* Slogan Toko */}
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 block mb-1">Slogan / Keterangan Nota</label>
+                    <input
+                      type="text"
+                      value={tempSlogan}
+                      onChange={(e) => setTempSlogan(e.target.value)}
+                      className="w-full text-xs p-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-accent text-slate-700 font-medium transition-all"
+                      placeholder="Contoh: Menyediakan Berbagai Kebutuhan Berkualitas"
+                    />
                   </div>
                 </div>
 
-                {/* Nama Toko */}
-                <div>
-                  <label className="text-xs font-bold text-slate-705 block mb-1 font-sans">Nama Toko</label>
-                  <input
-                    type="text"
-                    value={tempName}
-                    onChange={(e) => setTempName(e.target.value)}
-                    className="w-full text-xs p-3 bg-slate-50 border border-slate-205 rounded-xl focus:outline-none focus:border-accent focus:bg-white text-slate-800 font-bold uppercase"
-                    placeholder="Contoh: TS SANGKAR"
-                  />
+                {/* --- SEKSI 2: INFORMASI ALAMAT DAN ASOSIASI KONTAK --- */}
+                <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-100 space-y-4">
+                  <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">2. Alamat & Kontak Fisik</h4>
+                  
+                  {/* Alamat Fisik Toko */}
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 block mb-1">Alamat Fisik Toko (Kolom Luas)</label>
+                    <textarea
+                      rows={3}
+                      value={tempAlamat}
+                      onChange={(e) => setTempAlamat(e.target.value)}
+                      className="w-full text-xs p-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-accent text-slate-700 font-medium transition-all resize-none"
+                      placeholder="Masukkan alamat lengkap fisik toko Anda yang akan dicetak di kertas struk..."
+                    />
+                  </div>
+
+                  {/* Kontak Telepon Toko */}
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 block mb-1">Nomor Kontak / Telepon Toko</label>
+                    <input
+                      type="text"
+                      value={tempKontak}
+                      onChange={(e) => setTempKontak(e.target.value)}
+                      className="w-full text-xs p-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-accent text-slate-700 font-medium transition-all"
+                      placeholder="Contoh: 📞 0851-1960-6906"
+                    />
+                  </div>
                 </div>
 
-                {/* Slogan Toko */}
-                <div>
-                  <label className="text-xs font-bold text-slate-705 block mb-1 font-sans">Slogan Toko</label>
-                  <input
-                    type="text"
-                    value={tempSlogan}
-                    onChange={(e) => setTempSlogan(e.target.value)}
-                    className="w-full text-xs p-3 bg-slate-50 border border-slate-205 rounded-xl focus:outline-none focus:border-accent focus:bg-white text-slate-700 font-medium"
-                    placeholder="Contoh: Ahlinya Sangkar Burung Mentah Berkualitas"
-                  />
+                {/* --- SEKSI 3: TAMPILAN & TEMA APLIKASI --- */}
+                <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-100 space-y-4">
+                  <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">3. Tema & Tampilan</h4>
+                  <p className="text-[11px] text-slate-500">
+                    Pilih tema tampilan kasir yang paling nyaman untuk mata Anda. Mode Gelap direkomendasikan untuk mengurangi radiasi cahaya dan kelelahan mata di malam hari.
+                  </p>
+
+                  <div className="grid grid-cols-2 gap-4 font-sans">
+                    {/* Light Theme Card */}
+                    <button
+                      type="button"
+                      onClick={() => setIsDarkMode(false)}
+                      className={`p-3.5 rounded-2xl border-2 text-left transition-all cursor-pointer ${
+                        !isDarkMode
+                          ? 'border-accent bg-white shadow-xs'
+                          : 'border-slate-200 bg-slate-100 opacity-60 hover:opacity-100'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-bold text-slate-800">Tema Terang</span>
+                        <div className={`w-4.5 h-4.5 rounded-full flex items-center justify-center border ${
+                          !isDarkMode ? 'border-accent bg-accent text-white' : 'border-slate-300'
+                        }`}>
+                          {!isDarkMode && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
+                        </div>
+                      </div>
+                      <div className="h-10 bg-slate-100 rounded-lg p-1.5 space-y-1 block select-none">
+                        <div className="h-2 w-2/3 bg-slate-300 rounded" />
+                        <div className="grid grid-cols-3 gap-1">
+                          <div className="h-4 bg-white rounded border border-slate-200" />
+                          <div className="h-4 bg-white rounded border border-slate-200" />
+                          <div className="h-4 bg-white rounded border border-slate-200" />
+                        </div>
+                      </div>
+                    </button>
+
+                    {/* Dark Theme Card */}
+                    <button
+                      type="button"
+                      onClick={() => setIsDarkMode(true)}
+                      className={`p-3.5 rounded-2xl border-2 text-left transition-all cursor-pointer ${
+                        isDarkMode
+                          ? 'border-accent bg-slate-900 shadow-xs'
+                          : 'border-slate-200 bg-slate-100 opacity-60 hover:opacity-100'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-bold text-slate-800">Tema Gelap</span>
+                        <div className={`w-4.5 h-4.5 rounded-full flex items-center justify-center border ${
+                          isDarkMode ? 'border-accent bg-accent text-white' : 'border-slate-300'
+                        }`}>
+                          {isDarkMode && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
+                        </div>
+                      </div>
+                      <div className="h-10 bg-slate-850 rounded-lg p-1.5 space-y-1 block select-none">
+                        <div className="h-2 w-2/3 bg-slate-600 rounded" />
+                        <div className="grid grid-cols-3 gap-1">
+                          <div className="h-4 bg-slate-700 rounded border border-slate-600" />
+                          <div className="h-4 bg-slate-700 rounded border border-slate-600" />
+                          <div className="h-4 bg-slate-700 rounded border border-slate-600" />
+                        </div>
+                      </div>
+                    </button>
+                  </div>
                 </div>
 
-                {/* Alamat & Kontak Toko */}
-                <div>
-                  <label className="text-xs font-bold text-slate-705 block mb-1 font-sans">Alamat & Nomor Telepon</label>
-                  <input
-                    type="text"
-                    value={tempAlamat}
-                    onChange={(e) => setTempAlamat(e.target.value)}
-                    className="w-full text-xs p-3 bg-slate-50 border border-slate-205 rounded-xl focus:outline-none focus:border-accent focus:bg-white text-slate-705 font-medium"
-                    placeholder="Contoh: tssangkar.github.io | 0851-1960-6906"
-                  />
+                {/* --- SEKSI 4: INSTALASI APLIKASI (PWA) --- */}
+                <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-100 space-y-4">
+                  <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">4. Instalasi Aplikasi (PWA)</h4>
+                  <p className="text-[11px] text-slate-500">
+                    Instal Rizquna langsung di perangkat mobile, tablet, atau desktop Anda untuk akses cepat, stabil, tanpa batas, dan dapat dibuka secara luring (offline) tanpa kuota internet tanpa melalui App Store / Play Store.
+                  </p>
+
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 bg-white/80 rounded-2xl border border-slate-205">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-accent/10 border border-accent/20 rounded-xl flex items-center justify-center text-accent">
+                        <Download className="w-5 h-5 animate-pulse" />
+                      </div>
+                      <div>
+                        <span className="text-xs font-bold text-slate-800 block">Status Instalasi</span>
+                        <span className="text-[10px] text-slate-500 font-medium">
+                          {deferredPrompt ? 'Siap Diinstal!' : 'Telah Terinstal / Berjalan di Peramban'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleInstallPWA}
+                      className="w-full sm:w-auto px-4 py-2 bg-accent hover:bg-accent-hover text-slate-950 font-bold text-xs rounded-xl transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>Instal Rizquna</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* --- SEKSI 5: INTEGRASI GOOGLE BACKEND --- */}
+                <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-100 space-y-4">
+                  <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">5. Integrasi Spreadsheet Cloud</h4>
+
+                  {/* URL Google Apps Script */}
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 block mb-1">URL Google Apps Script (GAS) Web App</label>
+                    <input
+                      type="text"
+                      value={tempGasUrl}
+                      onChange={(e) => setTempGasUrl(e.target.value)}
+                      className="w-full text-xs p-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-accent text-slate-700 font-mono transition-all"
+                      placeholder="https://script.google.com/macros/s/.../exec"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1 font-sans">
+                      URL Web App hasil deployment script Google Apps Script Anda. Seluruh transaksi dan sinkronisasi produk akan langsung terhubung ke alamat GAS ini.
+                    </p>
+                  </div>
+
+                  {/* Link / ID Google Sheet */}
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 block mb-1">Link URL atau ID Google Sheet (Database)</label>
+                    <input
+                      type="text"
+                      value={tempSheetId}
+                      onChange={(e) => setTempSheetId(e.target.value)}
+                      className="w-full text-xs p-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-accent text-slate-700 font-mono transition-all"
+                      placeholder="Masukkan Link URL Google Sheet atau ID Spreadsheet saja..."
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1 font-sans">
+                      Pasted URL lengkap ataupun hanya text ID Google Spreadsheet Anda yang bertindak sebagai database.
+                    </p>
+                  </div>
+
+                  {/* Tombol Database dan Download Google Sheet */}
+                  <div className="pt-2">
+                    <label className="text-xs font-semibold text-slate-600 block mb-2">Aksi Pengelolaan Database Spreadsheet:</label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        onClick={() => {
+                          if (!tempSheetId.trim()) {
+                            triggerToast('Harap masukkan Link atau ID Google Sheet terlebih dahulu!', 'warning');
+                            return;
+                          }
+                          // Extract spreadsheet ID if full URL was pasted
+                          let finalId = tempSheetId.trim();
+                          if (finalId.includes('/d/')) {
+                            const match = finalId.match(/\/d\/([a-zA-Z0-9-_]{25,110})/);
+                            if (match) {
+                              finalId = match[1];
+                            }
+                          }
+                          const url = finalId.startsWith('http') ? finalId : `https://docs.google.com/spreadsheets/d/${finalId}/edit`;
+                          window.open(url, '_blank');
+                        }}
+                        className="py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <Share2 className="w-3.5 h-3.5" />
+                        DATABASE
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          if (!tempSheetId.trim()) {
+                            triggerToast('Harap masukkan Link atau ID Google Sheet terlebih dahulu untuk mengunduh!', 'warning');
+                            return;
+                          }
+                          // Extract spreadsheet ID
+                          let finalId = tempSheetId.trim();
+                          if (finalId.includes('/d/')) {
+                            const match = finalId.match(/\/d\/([a-zA-Z0-9-_]{25,110})/);
+                            if (match) {
+                              finalId = match[1];
+                            }
+                          }
+                          const downloadUrl = `https://docs.google.com/spreadsheets/d/${finalId}/export?format=xlsx`;
+                          window.open(downloadUrl, '_blank');
+                          triggerToast('Mengunduh spreadsheet database...', 'info');
+                        }}
+                        className="py-2.5 px-4 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        DOWNLOAD SHEET
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div className="flex gap-3 pt-2">
+              {/* Tombol Simpan Semuanya */}
+              <div className="flex gap-3 pt-3 border-t border-slate-100">
                 <button
                   onClick={() => {
-                    handleSaveStoreConfig(tempName, tempSlogan, tempAlamat, tempLogo);
+                    // Smart extraction of sheetID from pasted URL
+                    let extractedId = tempSheetId.trim();
+                    if (extractedId.includes('/d/')) {
+                      const match = extractedId.match(/\/d\/([a-zA-Z0-9-_]{25,110})/);
+                      if (match) {
+                        extractedId = match[1];
+                      }
+                    }
+                    handleSaveStoreConfig(
+                      tempName, 
+                      tempSlogan, 
+                      tempAlamat, 
+                      tempKontak, 
+                      tempLogo, 
+                      tempGasUrl, 
+                      extractedId
+                    );
                   }}
                   className="flex-1 py-3 bg-accent hover:bg-accent/90 text-white font-bold text-xs rounded-full transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer hover:shadow-md"
                 >
                   <CheckCircle2 className="w-4 h-4" />
-                  Simpan Perubahan
+                  Simpan Semua Pengaturan
                 </button>
                 <button
                   onClick={() => {
                     setTempName('KASIR PINTAR');
                     setTempSlogan('Sistem Kasir Fleksibel Multi-Fungsi');
-                    setTempAlamat('🌐 santridev.github.io | 📞 0812-3456-7890');
+                    setTempAlamat('🌐 santridev.github.io');
+                    setTempKontak('📞 0812-3456-7890');
                     setTempLogo('store.png');
-                    handleSaveStoreConfig('KASIR PINTAR', 'Sistem Kasir Fleksibel Multi-Fungsi', '🌐 santridev.github.io | 📞 0812-3456-7890', 'store.png');
+                    setTempGasUrl('https://script.google.com/macros/s/AKfycbxE4eMX3_TJlSkXitw2txzNv1R_AUMUarPFbatelhUgLw6V6IStSrys9C8lEZUhn-ZSgQ/exec');
+                    setTempSheetId('19981hn179EkrhmnlGCBPl5ZVhx84O1KMaglrq9RKVCI');
+                    
+                    handleSaveStoreConfig(
+                      'KASIR PINTAR', 
+                      'Sistem Kasir Fleksibel Multi-Fungsi', 
+                      '🌐 santridev.github.io', 
+                      '📞 0812-3456-7890', 
+                      'store.png',
+                      'https://script.google.com/macros/s/AKfycbxE4eMX3_TJlSkXitw2txzNv1R_AUMUarPFbatelhUgLw6V6IStSrys9C8lEZUhn-ZSgQ/exec',
+                      '19981hn179EkrhmnlGCBPl5ZVhx84O1KMaglrq9RKVCI'
+                    );
                   }}
-                  className="py-3 px-5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs rounded-full transition-all cursor-pointer"
+                  className="py-3 px-5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs rounded-full transition-all cursor-pointer font-sans"
                 >
                   Set Default
                 </button>
@@ -2681,69 +3548,98 @@ export default function App() {
         )}
       </main>
 
-      {/* FOOTER BAR */}
-      <footer className="bg-slate-900 text-slate-500 py-4 text-center text-xs border-t border-slate-850 select-none">
-        <p>Copyright &copy; 2026 {storeNameState}. Developed by Santri Dev. All rights reserved.</p>
-        <p className="text-[10px] text-slate-600 mt-1">Made with premium modern technologies &amp; responsive grids.</p>
+      <footer className="bg-slate-900 text-slate-550 py-5 text-center text-xs border-t border-slate-850 select-none">
+        <div className="max-w-7xl mx-auto px-4 space-y-1">
+          <p className="font-semibold text-slate-400">Copyright &copy; 2026 {storeNameState}. All rights reserved.</p>
+          <p className="text-[10px] text-slate-500">Sistem POS Kasir Pintar · Developed by santridev.github.io</p>
+        </div>
       </footer>
 
       {/* TOAST SYSTEM */}
-      {/* PWA Floating Install Button */}
-      {showInstallButton && !isAppInstalled && (
-        <div className="fixed bottom-6 right-4 z-50 flex flex-col items-end gap-2">
-          <button
-            onClick={handleInstallClick}
-            className="flex items-center gap-2 bg-accent text-white py-2 px-3 rounded-full shadow-xl hover:scale-[0.99] transition-all"
-          >
-            Install App
-          </button>
-          <button
-            onClick={() => setShowInstallGuide(true)}
-            className="flex items-center gap-2 bg-white/10 text-white py-1 px-2 rounded-full shadow-sm hover:bg-white/20 text-xs"
-          >
-            Petunjuk
-          </button>
-        </div>
-      )}
-
-      {/* Install Guide Modal */}
-      {showInstallGuide && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-60 p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl">
-            <div className="flex justify-between items-center mb-3">
-              <h3 className="font-bold text-lg">Cara Pasang Rizquna</h3>
-              <button onClick={() => setShowInstallGuide(false)} className="text-slate-500">Tutup</button>
-            </div>
-            <div className="space-y-3 text-sm text-slate-700">
-              <div>
-                <b>Android / Chrome:</b>
-                <ol className="list-decimal list-inside ml-3 mt-1">
-                  <li>Buka menu (titik tiga) → pilih "Install app" atau "Add to Home screen".</li>
-                  <li>Atau tekan tombol "Install App" di aplikasi ini.</li>
-                </ol>
-              </div>
-              <div>
-                <b>iOS / Safari:</b>
-                <ol className="list-decimal list-inside ml-3 mt-1">
-                  <li>Buka Safari, tap tombol Share (ikon kotak dengan panah ke atas).</li>
-                  <li>Pilih "Add to Home Screen" lalu konfirmasi.</li>
-                </ol>
-              </div>
-              <div>
-                <b>Jika tombol tidak muncul:</b>
-                <p className="mt-1">Pastikan halaman dimuat melalui HTTPS dan lakukan hard refresh. Untuk Safari, hanya Safari yang mendukung A2HS di iOS.</p>
-              </div>
-            </div>
-            <div className="flex justify-end mt-4">
-              <button onClick={() => setShowInstallGuide(false)} className="px-4 py-2 bg-accent text-white rounded-full">Mengerti</button>
-            </div>
-          </div>
-        </div>
-      )}
       {showToast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white py-3 px-5 rounded-full shadow-xl flex items-center gap-2 text-xs font-semibold animate-bounce">
           <CheckCircle2 className="w-4 h-4 text-accent" />
           <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {/* MODAL KONFIRMASI KOSONGKAN KERANJANG */}
+      {showConfirmClearCart && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 border border-slate-200 shadow-2xl space-y-5">
+            <div className="flex items-center gap-3.5 pb-2 border-b border-rose-100">
+              <div className="p-2.5 bg-rose-50 text-rose-600 rounded-xl">
+                <Trash2 className="w-6 h-6 animate-pulse" />
+              </div>
+              <div>
+                <h3 className="font-display font-bold text-slate-900 text-sm">
+                  Kosongkan Keranjang Belanja?
+                </h3>
+                <p className="text-[11px] text-slate-450 mt-0.5">
+                  Tindakan ini akan menghapus semua barang dari daftar keranjang.
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed font-semibold">
+              Apakah Anda yakin ingin mengosongkan seluruh item yang ada di dalam keranjang belanja saat ini?
+            </p>
+
+            <div className="flex gap-3 pt-1">
+              <button
+                onClick={() => setShowConfirmClearCart(false)}
+                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-full transition-all cursor-pointer active:scale-95"
+              >
+                Batal
+              </button>
+              <button
+                onClick={executeClearCart}
+                className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-full transition-all flex items-center justify-center gap-1.5 shadow-sm hover:shadow-md cursor-pointer active:scale-95"
+              >
+                Ya, Kosongkan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL KONFIRMASI RESET TRANSAKSI */}
+      {showConfirmReset && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 border border-slate-200 shadow-2xl space-y-5">
+            <div className="flex items-center gap-3.5 pb-2 border-b border-amber-100">
+              <div className="p-2.5 bg-amber-50 text-amber-600 rounded-xl">
+                <RotateCcw className="w-6 h-6 animate-pulse" />
+              </div>
+              <div>
+                <h3 className="font-display font-bold text-slate-900 text-sm">
+                  Reset Seluruh Transaksi?
+                </h3>
+                <p className="text-[11px] text-slate-450 mt-0.5">
+                  Tindakan ini akan mengosongkan keranjang dan semua data input kasir.
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed font-semibold">
+              Apakah Anda yakin ingin memulai transaksi baru dan menghapus semua catatan formulir kasir yang aktif?
+            </p>
+
+            <div className="flex gap-3 pt-1">
+              <button
+                onClick={() => setShowConfirmReset(false)}
+                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-full transition-all cursor-pointer active:scale-95"
+              >
+                Batal
+              </button>
+              <button
+                onClick={executeResetAll}
+                className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-full transition-all flex items-center justify-center gap-1.5 shadow-sm hover:shadow-md cursor-pointer active:scale-95"
+              >
+                Ya, Reset Baru
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -2850,6 +3746,78 @@ export default function App() {
               >
                 Tutup Debug
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PROFESSIONAL CAMERA BARCODE SCANNER OVERLAY */}
+      {isScannerOpen && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl border border-slate-205 overflow-hidden animate-scaleIn select-none">
+            <div className="bg-gradient-to-r from-primary to-secondary text-white p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center">
+                  <Camera className="w-4 h-4 text-accent-light" />
+                </div>
+                <div>
+                  <h3 className="font-display font-bold text-xs">Pindai Kode Barang</h3>
+                  <p className="text-[9px] text-slate-200">
+                    {scannerPurpose === 'productId' ? 'Mengisi Kode Barang Baru' : 'Mencari & Menambah Produk Kasir'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setIsScannerOpen(false);
+                  stopScanner();
+                }}
+                className="p-1 rounded-full bg-white/10 hover:bg-white/20 transition-all cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5 flex flex-col items-center">
+              {/* VIEWPORT BOX */}
+              <div className="relative w-full aspect-[4/3] max-w-[280px] rounded-2xl overflow-hidden border-2 border-slate-200 bg-slate-950 flex items-center justify-center shadow-inner">
+                {/* Custom pulsing scanner reticle/line */}
+                <div className="absolute inset-x-4 top-1/2 -translate-y-1/2 h-0.5 bg-rose-500 animate-pulse z-20 shadow-[0_0_8px_rgba(239,68,68,0.8)]" />
+                <div className="absolute top-4 left-4 w-5 h-5 border-t-4 border-l-4 border-accent z-10 rounded-tl" />
+                <div className="absolute top-4 right-4 w-5 h-5 border-t-4 border-r-4 border-accent z-10 rounded-tr" />
+                <div className="absolute bottom-4 left-4 w-5 h-5 border-b-4 border-l-4 border-accent z-10 rounded-bl" />
+                <div className="absolute bottom-4 right-4 w-5 h-5 border-b-4 border-r-4 border-accent z-10 rounded-br" />
+                
+                {/* HTML5 QR Code Mount Node */}
+                <div id="barcode-scanner-viewport" className="w-full h-full object-cover animate-pulse" />
+
+                {/* Scanned Transient Success Indicator Overlay */}
+                {lastScannedItem && (
+                  <div className="absolute inset-0 bg-emerald-500/90 backdrop-blur-xs flex flex-col items-center justify-center text-white p-3 text-center z-30 animate-fadeIn duration-200">
+                    <CheckCircle2 className="w-10 h-10 mb-2 animate-bounce" />
+                    <p className="font-bold text-xs leading-none">Terpindai Sukses!</p>
+                    <p className="text-[10px] font-semibold opacity-95 truncate max-w-[200px] mt-1">{lastScannedItem}</p>
+                    <p className="text-[9px] opacity-80 mt-0.5">+1 Keranjang</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="text-center space-y-1">
+                <p className="text-[11px] font-bold text-slate-705">Arahkan Kamera ke Kode Batang (Barcode / QR)</p>
+                <p className="text-[9px] text-slate-400">Kasir profesional otomatis menambahkan item ke keranjang.</p>
+              </div>
+
+              <div className="w-full pt-1">
+                <button
+                  onClick={() => {
+                    setIsScannerOpen(false);
+                    stopScanner();
+                  }}
+                  className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs rounded-full cursor-pointer text-center active:scale-95 transition-all"
+                >
+                  Selesai / Tutup Kamera
+                </button>
+              </div>
             </div>
           </div>
         </div>
