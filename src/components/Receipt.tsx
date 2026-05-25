@@ -170,7 +170,7 @@ export default function Receipt({ data }: ReceiptProps) {
                 Produk
               </th>
               <th style={{ padding: '8px 4px', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.5px', color: '#4b5563', textAlign: 'center', fontWeight: 'bold' }}>
-                Ukr
+                Var
               </th>
               <th style={{ padding: '8px 4px', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.5px', color: '#4b5563', textAlign: 'center', fontWeight: 'bold' }}>
                 Qty
